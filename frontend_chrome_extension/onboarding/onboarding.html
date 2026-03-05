@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to FareWise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #070711;
+      --surface: #0F0F1E;
+      --elevated:#161630;
+      --blue:    #4F8EF7;
+      --gold:    #F5A623;
+      --green:   #2ED47A;
+      --t1:      #EEEEFF;
+      --t2:      #8B8FA8;
+      --t3:      #4A4D6A;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--t1);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 560px;
+      width: 100%;
+      text-align: center;
+    }
+
+    /* Hero */
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(79,142,247,0.10);
+      border: 1px solid rgba(79,142,247,0.25);
+      border-radius: 999px;
+      padding: 6px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--blue);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+
+    .logo {
+      font-family: 'Syne', sans-serif;
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+    }
+    .logo span { color: var(--blue); }
+
+    .tagline {
+      font-size: 18px;
+      color: var(--t2);
+      margin-bottom: 40px;
+      line-height: 1.5;
+    }
+
+    /* Steps */
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 40px;
+      text-align: left;
+    }
+
+    .step {
+      background: var(--surface);
+      border: 1px solid var(--elevated);
+      border-radius: 14px;
+      padding: 16px 18px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .step-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--blue), #7B5CF8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .step-body h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 3px;
+    }
+    .step-body p {
+      font-size: 12px;
+      color: var(--t2);
+      line-height: 1.5;
+    }
+    .step-body kbd {
+      background: var(--elevated);
+      border: 1px solid var(--t3);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: inherit;
+      font-size: 11px;
+      color: var(--t1);
+    }
+
+    /* Modes */
+    .mode-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .mode-card {
+      background: var(--surface);
+      border: 1px solid var(--elevated);
+      border-radius: 14px;
+      padding: 20px 16px;
+      text-align: center;
+    }
+    .mode-card.products { border-color: rgba(79,142,247,0.25); }
+    .mode-card.travel   { border-color: rgba(245,166,35,0.25); }
+
+    .mode-icon { font-size: 28px; margin-bottom: 8px; }
+    .mode-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .products .mode-name { color: var(--blue); }
+    .travel   .mode-name { color: var(--gold); }
+    .mode-desc { font-size: 11px; color: var(--t2); line-height: 1.4; }
+
+    /* CTA */
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, var(--blue), #7B5CF8);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 14px 32px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      text-decoration: none;
+    }
+    .cta-btn:hover   { opacity: 0.9; transform: translateY(-1px); }
+    .cta-btn:active  { transform: none; }
+
+    .footer-note {
+      margin-top: 16px;
+      font-size: 11px;
+      color: var(--t3);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="hero-badge">🎯 Installed Successfully</div>
+
+    <div class="logo">Fare<span>Wise</span></div>
+    <div class="tagline">India's AI price intelligence agent.<br>See the real price, every time.</div>
+
+    <!-- HOW TO USE -->
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>Open the panel</h3>
+          <p>Click the FareWise icon in your toolbar, or press <kbd>⌘ Shift F</kbd> from any tab.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Pick a mode</h3>
+          <p>Use <strong>Products</strong> to paste a WhatsApp product screenshot, or <strong>Travel</strong> to speak / type a flight route.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>Set your bank card</h3>
+          <p>Open Settings (⚙) and select your cards — FareWise factors in EMI & cashback offers automatically.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Get the best price</h3>
+          <p>Nova Act searches Amazon, Flipkart, MakeMyTrip, Goibibo & Cleartrip in parallel. Results in ~45s.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODES -->
+    <div class="mode-grid">
+      <div class="mode-card products">
+        <div class="mode-icon">📦</div>
+        <div class="mode-name">Products</div>
+        <div class="mode-desc">Paste a WhatsApp listing screenshot → compare Amazon &amp; Flipkart with card offers</div>
+      </div>
+      <div class="mode-card travel">
+        <div class="mode-icon">✈️</div>
+        <div class="mode-name">Travel</div>
+        <div class="mode-desc">Speak or type a route → compare MakeMyTrip, Goibibo &amp; Cleartrip</div>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <a href="#" class="cta-btn" id="open-panel-btn">
+      ⚡ Open FareWise Panel
+    </a>
+    <div class="footer-note">Powered by Amazon Nova · Built for the AWS Nova Hackathon</div>
+  </div>
+
+  <script>
+    document.getElementById('open-panel-btn').addEventListener('click', (e) => {
+      e.preventDefault();
+      // Signal the background SW to open the side panel
+      chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
+      window.close();
+    });
+
+    // Detect OS and update shortcut hint
+    const isMac = navigator.platform.toUpperCase().includes('MAC');
+    if (!isMac) {
+      document.querySelectorAll('kbd').forEach(el => {
+        el.textContent = el.textContent.replace('⌘ Shift F', 'Ctrl+Shift+F');
+      });
+    }
+  </script>
+</body>
+</html>

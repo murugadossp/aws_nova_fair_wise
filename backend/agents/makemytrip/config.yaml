@@ -1,0 +1,57 @@
+workflow_name: "farewise-makemytrip"
+base_url: "https://www.makemytrip.com"
+default_criteria: "top 5 cheapest flight options"
+max_steps_default: 50
+
+city_codes:
+  mumbai: BOM
+  delhi: DEL
+  bangalore: BLR
+  bengaluru: BLR
+  hyderabad: HYD
+  chennai: MAA
+  kolkata: CCU
+  pune: PNQ
+  ahmedabad: AMD
+  goa: GOI
+  jaipur: JAI
+  kochi: COK
+  cochin: COK
+  lucknow: LKO
+  chandigarh: IXC
+  indore: IDR
+  bhubaneswar: BBI
+  nagpur: NAG
+  coimbatore: CJB
+  visakhapatnam: VTZ
+  vizag: VTZ
+  patna: PAT
+  srinagar: SXR
+  amritsar: ATQ
+  varanasi: VNS
+  leh: IXL
+  aurangabad: IXU
+
+steps:
+  wait:
+    instruction: "Wait for the flight listings to fully load. Do not click anything."
+  extraction:
+    instruction: |
+      Extract flights from this MakeMyTrip search page that match: {{criteria}}.
+      For each flight return: airline, flight_number, departure (HH:MM), arrival (HH:MM), duration (Xh Ym), stops (integer), price (integer INR), url.
+      For url: use the full absolute link (must start with {{base_url}}/) that opens the booking or flight-details page for that flight when clicked. Do not use relative paths or # fragments.
+      Try to get up to 5 results. If you are running out of steps, return the flights you have collected so far (do not fail).
+      Return ONLY a valid JSON array sorted by price ascending.
+    schema:
+      type: array
+      items:
+        type: object
+        properties:
+          airline: { type: string }
+          flight_number: { type: string }
+          departure: { type: string }
+          arrival: { type: string }
+          duration: { type: string }
+          stops: { type: integer }
+          price: { type: integer }
+          url: { type: string }

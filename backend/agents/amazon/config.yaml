@@ -1,0 +1,33 @@
+workflow_name: "farewise-amazon"
+base_url: "https://www.amazon.in"
+
+steps:
+  extraction:
+    instruction: |
+      Extract the top {{max_results}} product listings from this Amazon search page.
+      For each product return:
+      - title: full product name
+      - price: current selling price as integer in INR (digits only, no symbols)
+      - original_price: MRP/original price as integer if shown, else null
+      - discount_pct: discount percentage as integer if shown (e.g. 20), else null
+      - rating: star rating as float (e.g. 4.2), else null
+      - review_count: number of ratings as integer, else null
+      - thumbnail_url: product image URL
+      - url: full product page URL (must start with {{base_url}})
+      - availability: "in_stock" or "out_of_stock"
+
+      Return ONLY a valid JSON array sorted by relevance.
+    schema:
+      type: array
+      items:
+        type: object
+        properties:
+          title: { type: string }
+          price: { type: integer }
+          original_price: { type: [integer, "null"] }
+          discount_pct: { type: [integer, "null"] }
+          rating: { type: [number, "null"] }
+          review_count: { type: [integer, "null"] }
+          thumbnail_url: { type: string }
+          url: { type: string }
+          availability: { type: string }

@@ -1,0 +1,74 @@
+{
+  "name": "FareWise",
+  "short_name": "FareWise",
+  "description": "India's AI price intelligence — gadgets and flights with your bank card offer. Powered by Amazon Nova.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#070711",
+  "theme_color": "#4F8EF7",
+  "categories": ["finance", "shopping", "travel", "utilities"],
+  "lang": "en-IN",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot-products.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "platform": "narrow",
+      "label": "Products Mode — paste a WhatsApp screenshot to compare gadget prices"
+    },
+    {
+      "src": "screenshot-travel.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "platform": "narrow",
+      "label": "Travel Mode — voice search for flight prices across MakeMyTrip, Goibibo, Cleartrip"
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "image",
+          "accept": ["image/png", "image/jpeg", "image/webp", "image/*"]
+        }
+      ]
+    }
+  },
+  "shortcuts": [
+    {
+      "name": "Compare Gadget",
+      "short_name": "Products",
+      "description": "Compare gadget prices on Amazon + Flipkart",
+      "url": "/?mode=products",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Find Cheapest Flight",
+      "short_name": "Travel",
+      "description": "Compare flight prices on MakeMyTrip, Goibibo, Cleartrip",
+      "url": "/?mode=travel",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

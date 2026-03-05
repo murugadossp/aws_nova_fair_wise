@@ -1,0 +1,331 @@
+{
+  "hdfc-regalia": {
+    "name": "HDFC Regalia",
+    "bank": "HDFC",
+    "network": "Visa",
+    "color": "#0070BA",
+    "offers": {
+      "amazon": [
+        {
+          "type": "cashback",
+          "rate_pct": 3.3,
+          "description": "3.3% cashback as reward points (1 RP = ₹0.50)",
+          "points_per_100": 4,
+          "point_value": 0.50,
+          "max_cashback": null,
+          "min_txn": 500,
+          "note": "Points credited within 45 days"
+        },
+        {
+          "type": "emi_discount",
+          "flat_off": 1500,
+          "description": "₹1,500 instant discount on 6-month No-Cost EMI (min ₹15,000)",
+          "min_txn": 15000,
+          "emi_months": 6
+        }
+      ],
+      "flipkart": [
+        {
+          "type": "cashback",
+          "rate_pct": 3.3,
+          "description": "3.3% cashback as reward points",
+          "points_per_100": 4,
+          "point_value": 0.50,
+          "max_cashback": null,
+          "min_txn": 500
+        }
+      ],
+      "makemytrip": [
+        {
+          "type": "cashback",
+          "rate_pct": 5.0,
+          "description": "5% cashback on flights (max ₹2,000/month)",
+          "max_cashback": 2000,
+          "min_txn": 3000,
+          "promo_code": "HDFCFLY"
+        },
+        {
+          "type": "instant_discount",
+          "flat_off": 1000,
+          "description": "₹1,000 instant discount on domestic flights",
+          "min_txn": 5000,
+          "promo_code": "HDFC1000"
+        }
+      ],
+      "goibibo": [
+        {
+          "type": "cashback",
+          "rate_pct": 5.0,
+          "description": "5% cashback on flights via Goibibo",
+          "max_cashback": 1500,
+          "min_txn": 3000
+        }
+      ],
+      "cleartrip": [
+        {
+          "type": "instant_discount",
+          "rate_pct": 7.0,
+          "description": "7% instant discount on Cleartrip flights",
+          "max_discount": 1000,
+          "min_txn": 4000,
+          "promo_code": "HDFCCT"
+        }
+      ]
+    }
+  },
+
+  "sbi-simplyclick": {
+    "name": "SBI SimplyCLICK",
+    "bank": "SBI",
+    "network": "Visa",
+    "color": "#1A237E",
+    "offers": {
+      "amazon": [
+        {
+          "type": "cashback",
+          "rate_pct": 5.0,
+          "description": "5% cashback on Amazon (via reward points)",
+          "points_per_100": 10,
+          "point_value": 0.25,
+          "max_cashback": null,
+          "min_txn": 100,
+          "note": "E-voucher redeemable every quarter at ₹500 milestone"
+        }
+      ],
+      "flipkart": [
+        {
+          "type": "cashback",
+          "rate_pct": 1.25,
+          "description": "1.25% cashback on other online spends",
+          "points_per_100": 5,
+          "point_value": 0.25,
+          "max_cashback": null,
+          "min_txn": 100
+        }
+      ],
+      "makemytrip": [
+        {
+          "type": "cashback",
+          "rate_pct": 2.5,
+          "description": "2.5% cashback on travel platforms",
+          "points_per_100": 10,
+          "point_value": 0.25,
+          "max_cashback": null,
+          "min_txn": 2000
+        }
+      ],
+      "goibibo": [
+        {
+          "type": "cashback",
+          "rate_pct": 2.5,
+          "description": "2.5% cashback on Goibibo",
+          "points_per_100": 10,
+          "point_value": 0.25,
+          "max_cashback": null,
+          "min_txn": 2000
+        }
+      ],
+      "cleartrip": [
+        {
+          "type": "cashback",
+          "rate_pct": 2.5,
+          "description": "2.5% cashback on Cleartrip",
+          "points_per_100": 10,
+          "point_value": 0.25,
+          "max_cashback": null,
+          "min_txn": 2000
+        }
+      ]
+    }
+  },
+
+  "axis-flipkart": {
+    "name": "Axis Flipkart",
+    "bank": "Axis",
+    "network": "Visa",
+    "color": "#97144D",
+    "offers": {
+      "flipkart": [
+        {
+          "type": "cashback",
+          "rate_pct": 5.0,
+          "description": "5% unlimited cashback on Flipkart",
+          "points_per_100": 0,
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 100
+        },
+        {
+          "type": "emi_discount",
+          "flat_off": 750,
+          "description": "Extra ₹750 off on 3-month No-Cost EMI (min ₹10,000)",
+          "min_txn": 10000,
+          "emi_months": 3
+        }
+      ],
+      "amazon": [
+        {
+          "type": "cashback",
+          "rate_pct": 4.0,
+          "description": "4% cashback on Amazon",
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 100
+        }
+      ],
+      "makemytrip": [
+        {
+          "type": "cashback",
+          "rate_pct": 1.5,
+          "description": "1.5% cashback on other online spends",
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 500
+        }
+      ],
+      "goibibo": [
+        {
+          "type": "cashback",
+          "rate_pct": 1.5,
+          "description": "1.5% cashback on other online spends",
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 500
+        }
+      ],
+      "cleartrip": [
+        {
+          "type": "cashback",
+          "rate_pct": 1.5,
+          "description": "1.5% cashback on other online spends",
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 500
+        }
+      ]
+    }
+  },
+
+  "icici-amazon-pay": {
+    "name": "Amazon Pay ICICI",
+    "bank": "ICICI",
+    "network": "Visa",
+    "color": "#FF9900",
+    "offers": {
+      "amazon": [
+        {
+          "type": "cashback",
+          "rate_pct": 5.0,
+          "description": "5% cashback for Prime members on Amazon",
+          "prime_only": true,
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 100
+        },
+        {
+          "type": "cashback",
+          "rate_pct": 3.0,
+          "description": "3% cashback for non-Prime on Amazon",
+          "prime_only": false,
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 100
+        }
+      ],
+      "flipkart": [
+        {
+          "type": "cashback",
+          "rate_pct": 2.0,
+          "description": "2% cashback on other online spends",
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 100
+        }
+      ],
+      "makemytrip": [
+        {
+          "type": "cashback",
+          "rate_pct": 2.0,
+          "description": "2% cashback on other online spends",
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 100
+        }
+      ],
+      "goibibo": [
+        {
+          "type": "cashback",
+          "rate_pct": 2.0,
+          "description": "2% cashback on other online spends",
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 100
+        }
+      ],
+      "cleartrip": [
+        {
+          "type": "cashback",
+          "rate_pct": 2.0,
+          "description": "2% cashback on other online spends",
+          "direct_cashback": true,
+          "max_cashback": null,
+          "min_txn": 100
+        }
+      ]
+    }
+  },
+
+  "kotak-essentia": {
+    "name": "Kotak Essentia",
+    "bank": "Kotak",
+    "network": "Visa",
+    "color": "#ED1C24",
+    "offers": {
+      "amazon": [
+        {
+          "type": "cashback",
+          "rate_pct": 2.0,
+          "description": "2% cashback on online grocery & shopping",
+          "max_cashback": 500,
+          "min_txn": 500
+        }
+      ],
+      "flipkart": [
+        {
+          "type": "cashback",
+          "rate_pct": 2.0,
+          "description": "2% cashback on online shopping",
+          "max_cashback": 500,
+          "min_txn": 500
+        }
+      ],
+      "makemytrip": [
+        {
+          "type": "instant_discount",
+          "flat_off": 500,
+          "description": "₹500 instant discount on MakeMyTrip flights",
+          "min_txn": 4000,
+          "promo_code": "KOTAKMMT"
+        }
+      ],
+      "goibibo": [
+        {
+          "type": "cashback",
+          "rate_pct": 1.0,
+          "description": "1% cashback on travel spends",
+          "max_cashback": 300,
+          "min_txn": 2000
+        }
+      ],
+      "cleartrip": [
+        {
+          "type": "cashback",
+          "rate_pct": 1.0,
+          "description": "1% cashback on travel spends",
+          "max_cashback": 300,
+          "min_txn": 2000
+        }
+      ]
+    }
+  }
+}

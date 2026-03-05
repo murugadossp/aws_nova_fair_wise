@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FareWise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* ── RESET ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: #070711;
+      color: #EEEEFF;
+      font-size: 13px;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── VARIABLES ─────────────────────────────────────────────── */
+    :root {
+      --bg:          #070711;
+      --surface:     #0F0F1E;
+      --elevated:    #161630;
+      --overlay:     #1E1E40;
+      --blue:        #4F8EF7;
+      --blue-glow:   rgba(79,142,247,0.12);
+      --blue-border: rgba(79,142,247,0.22);
+      --gold:        #F5A623;
+      --gold-glow:   rgba(245,166,35,0.10);
+      --gold-border: rgba(245,166,35,0.32);
+      --green:       #2ED47A;
+      --green-glow:  rgba(46,212,122,0.10);
+      --green-border:rgba(46,212,122,0.20);
+      --yellow:      #FFD166;
+      --red:         #FF5F5F;
+      --t1:          #EEEEFF;
+      --t2:          #8B8FA8;
+      --t3:          #4A4D6A;
+      --amazon:      #FF9900;
+      --flipkart:    #2874F0;
+      --mmt:         #D42B2B;
+      --goibibo:     #E8390E;
+      --cleartrip:   #E87722;
+    }
+
+    /* ── HEADER ────────────────────────────────────────────────── */
+    .header {
+      flex-shrink: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--elevated);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo {
+      font-family: 'Syne', sans-serif;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      flex-shrink: 0;
+    }
+    .logo span { color: var(--blue); }
+    .mode-toggle {
+      flex: 1;
+      display: flex;
+      background: var(--elevated);
+      border-radius: 999px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .mode-btn {
+      flex: 1;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 6px;
+      border-radius: 999px;
+      border: none;
+      background: none;
+      color: var(--t3);
+      cursor: pointer;
+      transition: all 0.18s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .mode-btn.active-products {
+      background: var(--blue-glow);
+      color: var(--blue);
+      border: 1px solid var(--blue-border);
+    }
+    .mode-btn.active-travel {
+      background: rgba(0,196,204,0.10);
+      color: #00C4CC;
+      border: 1px solid rgba(0,196,204,0.22);
+    }
+    .settings-btn {
+      flex-shrink: 0;
+      width: 28px; height: 28px;
+      background: none;
+      border: 1px solid var(--elevated);
+      border-radius: 8px;
+      color: var(--t3);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      transition: all 0.15s;
+    }
+    .settings-btn:hover { border-color: var(--blue-border); color: var(--blue); }
+
+    /* ── SCROLL AREA ───────────────────────────────────────────── */
+    .scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .scroll-area::-webkit-scrollbar { width: 4px; }
+    .scroll-area::-webkit-scrollbar-track { background: transparent; }
+    .scroll-area::-webkit-scrollbar-thumb { background: var(--elevated); border-radius: 2px; }
+
+    /* ── SCREENS ───────────────────────────────────────────────── */
+    .screen { display: none; flex-direction: column; gap: 12px; }
+    .screen.active { display: flex; }
+
+    /* ── INPUT AREA — PRODUCTS ─────────────────────────────────── */
+    .drop-zone {
+      border: 1.5px dashed var(--elevated);
+      border-radius: 12px;
+      padding: 20px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--blue-border);
+      background: var(--blue-glow);
+    }
+    .drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .drop-icon { font-size: 28px; margin-bottom: 7px; }
+    .drop-title { font-size: 12px; font-weight: 600; color: var(--t1); margin-bottom: 3px; }
+    .drop-sub { font-size: 11px; color: var(--t3); }
+    .drop-sub span { color: var(--blue); }
+
+    /* Preview of pasted image */
+    .paste-preview {
+      display: none;
+      position: relative;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--blue-border);
+    }
+    .paste-preview img { width: 100%; display: block; max-height: 140px; object-fit: cover; }
+    .paste-preview-remove {
+      position: absolute; top: 6px; right: 6px;
+      width: 22px; height: 22px;
+      background: rgba(0,0,0,0.7);
+      border: none; border-radius: 50%;
+      color: #fff; font-size: 12px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+
+    .divider {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 10px; color: var(--t3);
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--elevated);
+    }
+
+    .input-row { display: flex; gap: 6px; }
+    .text-input {
+      flex: 1;
+      background: var(--elevated);
+      border: 1px solid var(--elevated);
+      border-radius: 9px;
+      padding: 9px 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      color: var(--t1);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .text-input:focus { border-color: var(--blue-border); }
+    .text-input::placeholder { color: var(--t3); }
+
+    .icon-btn {
+      width: 38px; height: 38px;
+      background: var(--elevated);
+      border: 1px solid var(--elevated);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    .icon-btn:hover { border-color: var(--blue-border); background: var(--blue-glow); }
+    .icon-btn.voice-active {
+      background: rgba(255,95,95,0.12);
+      border-color: rgba(255,95,95,0.3);
+      animation: voicePulse 1s ease-in-out infinite;
+    }
+    @keyframes voicePulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+    .btn-search {
+      width: 100%;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      padding: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-search:hover { background: #3A6DD4; }
+    .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── INPUT AREA — TRAVEL ───────────────────────────────────── */
+    .voice-listen-area {
+      background: var(--surface);
+      border: 1px solid var(--elevated);
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .voice-listen-area:hover { border-color: rgba(0,196,204,0.22); }
+    .voice-listen-area.listening {
+      border-color: rgba(255,95,95,0.3);
+      background: rgba(255,95,95,0.04);
+    }
+    .mic-btn {
+      width: 52px; height: 52px;
+      background: linear-gradient(135deg, rgba(0,196,204,0.15) 0%, var(--blue-glow) 100%);
+      border: 1px solid rgba(0,196,204,0.25);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      margin: 0 auto 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .mic-btn.listening {
+      background: rgba(255,95,95,0.15);
+      border-color: rgba(255,95,95,0.4);
+      animation: micPulse 1.2s ease-in-out infinite;
+    }
+    @keyframes micPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+    .voice-label { font-size: 12px; font-weight: 600; color: var(--t1); }
+    .voice-sub { font-size: 11px; color: var(--t3); margin-top: 3px; }
+    .voice-transcript {
+      display: none;
+      background: var(--elevated);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--blue);
+      font-style: italic;
+      margin-top: 8px;
+    }
+
+    /* Waveform */
+    .waveform {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      height: 24px;
+      margin: 8px 0 0;
+    }
+    .waveform.show { display: flex; }
+    .wave-bar {
+      width: 3px;
+      background: var(--red, #FF5F5F);
+      border-radius: 999px;
+      animation: wave 0.7s ease-in-out infinite;
+    }
+    .wave-bar:nth-child(1){ animation-delay:0s;   height:8px; }
+    .wave-bar:nth-child(2){ animation-delay:0.1s; height:16px; }
+    .wave-bar:nth-child(3){ animation-delay:0.2s; height:22px; }
+    .wave-bar:nth-child(4){ animation-delay:0.15s;height:18px; }
+    .wave-bar:nth-child(5){ animation-delay:0.05s;height:12px; }
+    .wave-bar:nth-child(6){ animation-delay:0.25s;height:20px; }
+    .wave-bar:nth-child(7){ animation-delay:0.1s; height:8px; }
+    @keyframes wave { 0%,100%{transform:scaleY(0.4)} 50%{transform:scaleY(1)} }
+
+    /* Route fields */
+    .route-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .field-group { display: flex; flex-direction: column; gap: 4px; }
+    .field-label { font-size: 10px; font-weight: 600; color: var(--t3); text-transform: uppercase; letter-spacing: 0.08em; }
+    .select-input {
+      background: var(--elevated);
+      border: 1px solid var(--elevated);
+      border-radius: 9px;
+      padding: 8px 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      color: var(--t1);
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      width: 100%;
+    }
+    .select-input:focus { border-color: rgba(0,196,204,0.3); }
+    .btn-search-travel {
+      width: 100%;
+      background: linear-gradient(135deg, rgba(0,196,204,0.8) 0%, var(--blue) 100%);
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      padding: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-search-travel:hover { opacity: 0.88; }
+
+    /* ── IDENTIFICATION RESULT ─────────────────────────────────── */
+    .id-result {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--elevated);
+      border-radius: 10px;
+      padding: 10px 12px;
+      gap: 8px;
+      align-items: center;
+    }
+    .id-result.show { display: flex; }
+    .id-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+    .id-dot.medium { background: var(--yellow); }
+    .id-dot.low { background: var(--red); }
+    .id-info { flex: 1; min-width: 0; }
+    .id-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .id-conf { font-size: 10px; margin-top: 1px; }
+    .id-conf.high { color: var(--green); }
+    .id-conf.medium { color: var(--yellow); }
+    .id-conf.low { color: var(--red); }
+    .id-edit { font-size: 18px; cursor: pointer; color: var(--t3); flex-shrink: 0; transition: color 0.15s; }
+    .id-edit:hover { color: var(--blue); }
+
+    /* ── PROGRESS ──────────────────────────────────────────────── */
+    .progress-section {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .progress-section.show { display: flex; }
+    .progress-label { font-size: 11px; color: var(--t2); font-weight: 500; }
+    .agent-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .agent-name {
+      font-size: 11px;
+      font-weight: 600;
+      width: 90px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .platform-dot-sm { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .progress-track {
+      flex: 1;
+      height: 4px;
+      background: var(--elevated);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--blue) 0%, var(--gold) 100%);
+      transition: width 0.5s ease;
+      width: 0%;
+    }
+    .agent-status { font-size: 10px; color: var(--t3); width: 52px; text-align: right; flex-shrink: 0; }
+    .agent-status.done { color: var(--green); }
+
+    /* ── SAVINGS BANNER ────────────────────────────────────────── */
+    .savings-banner {
+      display: none;
+      background: linear-gradient(135deg, var(--green-glow) 0%, var(--blue-glow) 100%);
+      border: 1px solid var(--green-border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+    .savings-banner.show { display: block; }
+    .savings-label { font-size: 10px; font-weight: 600; color: var(--green); text-transform: uppercase; letter-spacing: 0.08em; }
+    .savings-value {
+      font-family: 'Syne', sans-serif;
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--green);
+      letter-spacing: -0.02em;
+    }
+    .savings-note { font-size: 10px; color: var(--t3); margin-top: 2px; }
+
+    /* ── RESULT CARDS ──────────────────────────────────────────── */
+    .results-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .result-card {
+      background: var(--surface);
+      border: 1px solid var(--elevated);
+      border-radius: 12px;
+      padding: 12px;
+      transition: border-color 0.2s;
+      animation: cardIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+    @keyframes cardIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    .result-card.winner {
+      border-color: var(--gold-border);
+      background: linear-gradient(135deg, var(--surface) 0%, rgba(245,166,35,0.04) 100%);
+      box-shadow: 0 0 18px var(--gold-glow);
+      animation: cardIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both, winnerPulse 2.5s 0.4s ease-in-out infinite;
+    }
+    @keyframes winnerPulse { 0%,100%{box-shadow:0 0 12px var(--gold-glow)} 50%{box-shadow:0 0 22px rgba(245,166,35,0.2)} }
+
+    .card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .card-platform { display: flex; align-items: center; gap: 6px; }
+    .card-platform-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-platform-name { font-size: 12px; font-weight: 700; }
+    .winner-chip {
+      font-size: 9px; font-weight: 700;
+      color: var(--gold);
+      background: var(--gold-glow);
+      border: 1px solid var(--gold-border);
+      padding: 2px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .card-price {
+      font-family: 'Syne', sans-serif;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--t1);
+      margin-bottom: 3px;
+    }
+    .card-breakdown { font-size: 10px; color: var(--t3); line-height: 1.6; }
+    .card-breakdown .card-off { color: var(--green); font-weight: 600; }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--elevated);
+    }
+    .card-meta-item { font-size: 10px; color: var(--t3); display: flex; align-items: center; gap: 3px; }
+    .card-cashback { font-size: 10px; color: var(--yellow); margin-left: auto; }
+
+    .btn-buy {
+      width: 100%;
+      margin-top: 10px;
+      background: var(--gold);
+      color: #111;
+      border: none;
+      border-radius: 8px;
+      padding: 9px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: opacity 0.15s;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .btn-buy:hover { opacity: 0.88; }
+    .btn-view {
+      width: 100%;
+      margin-top: 8px;
+      background: none;
+      color: var(--t2);
+      border: 1px solid var(--elevated);
+      border-radius: 8px;
+      padding: 7px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-view:hover { border-color: var(--blue-border); color: var(--blue); }
+
+    /* ── FLIGHT CARD EXTRAS ─────────────────────────────────────── */
+    .flight-info {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin: 6px 0 4px;
+    }
+    .flight-time { font-size: 16px; font-weight: 700; font-family: 'Syne', sans-serif; }
+    .flight-arrow {
+      flex: 1;
+      text-align: center;
+      position: relative;
+    }
+    .flight-arrow::before {
+      content: '';
+      position: absolute;
+      top: 50%; left: 8px; right: 8px;
+      height: 1px;
+      background: var(--elevated);
+      transform: translateY(-50%);
+    }
+    .flight-dur { font-size: 9px; color: var(--t3); position: relative; z-index: 1; background: var(--surface); padding: 0 4px; }
+    .flight-no-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      background: var(--elevated);
+      border-radius: 5px;
+      padding: 2px 6px;
+      color: var(--t2);
+      margin-bottom: 4px;
+    }
+
+    /* ── NOVA REASONING ────────────────────────────────────────── */
+    .nova-reasoning {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--elevated);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .nova-reasoning.show { display: block; }
+    .nova-reasoning-toggle {
+      width: 100%;
+      background: none;
+      border: none;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      color: var(--t2);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      text-align: left;
+    }
+    .nova-reasoning-toggle:hover { color: var(--blue); }
+    .toggle-arrow { margin-left: auto; transition: transform 0.2s; }
+    .toggle-arrow.open { transform: rotate(180deg); }
+    .nova-reasoning-body {
+      display: none;
+      padding: 0 12px 12px;
+      font-size: 11px;
+      color: var(--t2);
+      line-height: 1.7;
+      border-top: 1px solid var(--elevated);
+      padding-top: 10px;
+    }
+    .nova-reasoning-body.open { display: block; }
+
+    /* ── SETTINGS PANEL ────────────────────────────────────────── */
+    .settings-panel {
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .settings-panel.show { display: flex; }
+    .settings-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .settings-back {
+      background: none;
+      border: none;
+      color: var(--t2);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 4px;
+      transition: color 0.15s;
+    }
+    .settings-back:hover { color: var(--blue); }
+    .settings-section-label { font-size: 10px; font-weight: 700; color: var(--t3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+    .card-chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .card-chip {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--elevated);
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      color: var(--t2);
+    }
+    .card-chip.selected { background: var(--blue-glow); border-color: var(--blue-border); color: var(--blue); }
+    .card-chip .chip-check { display: none; font-size: 10px; }
+    .card-chip.selected .chip-check { display: inline; }
+    .settings-note { font-size: 10px; color: var(--t3); line-height: 1.6; padding: 8px 10px; background: var(--elevated); border-radius: 8px; }
+    .api-input {
+      background: var(--elevated);
+      border: 1px solid var(--elevated);
+      border-radius: 9px;
+      padding: 9px 12px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      color: var(--t1);
+      outline: none;
+      width: 100%;
+      transition: border-color 0.15s;
+    }
+    .api-input:focus { border-color: var(--blue-border); }
+    .btn-save {
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 9px;
+      padding: 9px 18px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-save:hover { background: #3A6DD4; }
+
+    /* ── EMPTY STATE ───────────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 24px 16px;
+      color: var(--t3);
+    }
+    .empty-icon { font-size: 36px; margin-bottom: 10px; opacity: 0.5; }
+    .empty-text { font-size: 12px; line-height: 1.6; }
+
+    /* ── STATUS BAR ────────────────────────────────────────────── */
+    .status-bar {
+      flex-shrink: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--elevated);
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: var(--t3);
+    }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+    .status-dot.connecting { background: var(--yellow); animation: statusBlink 1s infinite; }
+    .status-dot.error { background: var(--red); }
+    @keyframes statusBlink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .status-text { flex: 1; }
+    .status-model { color: var(--blue); font-weight: 600; }
+
+    /* ── TOAST ─────────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 48px;
+      left: 14px; right: 14px;
+      background: var(--overlay);
+      border: 1px solid var(--elevated);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--t1);
+      display: flex; align-items: center; gap: 8px;
+      transform: translateY(20px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none;
+      z-index: 100;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    /* ── UTILITY ───────────────────────────────────────────────── */
+    .row { display: flex; align-items: center; gap: 6px; }
+    .flex-1 { flex: 1; }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">Fare<span>Wise</span></div>
+    <div class="mode-toggle">
+      <button class="mode-btn active-products" id="btn-products" onclick="switchMode('products')">📦 Products</button>
+      <button class="mode-btn" id="btn-travel" onclick="switchMode('travel')">✈️ Travel</button>
+    </div>
+    <button class="settings-btn" onclick="toggleSettings()" title="Settings">⚙</button>
+  </div>
+
+  <!-- SCROLL AREA -->
+  <div class="scroll-area" id="scroll-area">
+
+    <!-- ══ PRODUCTS SCREEN ═════════════════════════════════════ -->
+    <div class="screen active" id="screen-products">
+
+      <!-- Drop Zone -->
+      <div class="drop-zone" id="drop-zone"
+           ondragover="handleDragOver(event)"
+           ondragleave="handleDragLeave(event)"
+           ondrop="handleDrop(event)">
+        <input type="file" accept="image/*" id="file-input" onchange="handleFileInput(event)">
+        <div class="drop-icon">📋</div>
+        <div class="drop-title">Paste or drop a WhatsApp screenshot</div>
+        <div class="drop-sub">Any product listing image · <span>Cmd+V to paste</span></div>
+      </div>
+
+      <!-- Image preview after paste/upload -->
+      <div class="paste-preview" id="paste-preview">
+        <img id="preview-img" src="" alt="Product screenshot">
+        <button class="paste-preview-remove" onclick="clearPreview()">✕</button>
+      </div>
+
+      <div class="divider">or type / speak</div>
+
+      <div class="input-row">
+        <input class="text-input" id="product-query" type="text"
+               placeholder="Sony WH-1000XM5, Samsung S25+..."
+               onkeydown="if(event.key==='Enter') startProductSearch()">
+        <button class="icon-btn" id="voice-btn-products" onclick="toggleVoiceProducts()" title="Voice input">🎤</button>
+      </div>
+
+      <button class="btn-search" id="btn-search-products" onclick="startProductSearch()">
+        <span>⚡</span> Find Best Price
+      </button>
+
+      <!-- Identification result -->
+      <div class="id-result" id="id-result">
+        <div class="id-dot" id="id-dot"></div>
+        <div class="id-info">
+          <div class="id-name" id="id-name">Sony WH-1000XM5 Headphones</div>
+          <div class="id-conf high" id="id-conf">● 96% confidence</div>
+        </div>
+        <div class="id-edit" onclick="editQuery()">✏️</div>
+      </div>
+
+      <!-- Search progress -->
+      <div class="progress-section" id="progress-products">
+        <div class="progress-label">Searching platforms...</div>
+        <div class="agent-row">
+          <div class="agent-name">
+            <div class="platform-dot-sm" style="background:var(--amazon)"></div>
+            Amazon
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="prog-amazon"></div></div>
+          <div class="agent-status" id="status-amazon">–</div>
+        </div>
+        <div class="agent-row">
+          <div class="agent-name">
+            <div class="platform-dot-sm" style="background:var(--flipkart)"></div>
+            Flipkart
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="prog-flipkart"></div></div>
+          <div class="agent-status" id="status-flipkart">–</div>
+        </div>
+      </div>
+
+      <!-- Savings banner -->
+      <div class="savings-banner" id="savings-products">
+        <div class="savings-label">You save</div>
+        <div class="savings-value" id="savings-value-products">₹0</div>
+        <div class="savings-note">vs worst option + your best card</div>
+      </div>
+
+      <!-- Results -->
+      <div class="results-list" id="results-products"></div>
+
+      <!-- Nova Reasoning -->
+      <div class="nova-reasoning" id="nova-reasoning-products">
+        <button class="nova-reasoning-toggle" onclick="toggleReasoning('products')">
+          🧠 Nova's reasoning
+          <span class="toggle-arrow" id="arrow-products">▾</span>
+        </button>
+        <div class="nova-reasoning-body" id="reasoning-body-products">
+          Amazon wins because your HDFC Regalia card gives 15% instant discount (₹3,748), compared to Axis Flipkart at 13% (₹3,444). Both platforms offer free delivery. The effective saving over Flipkart is ₹1,749.
+        </div>
+      </div>
+
+    </div><!-- /screen-products -->
+
+    <!-- ══ TRAVEL SCREEN ═══════════════════════════════════════ -->
+    <div class="screen" id="screen-travel">
+
+      <!-- Voice input -->
+      <div class="voice-listen-area" id="voice-area" onclick="toggleVoiceTravel()">
+        <div class="mic-btn" id="mic-btn">🎤</div>
+        <div class="voice-label" id="voice-label">Tap to speak your route</div>
+        <div class="voice-sub" id="voice-sub">"Mumbai to Delhi, this Friday"</div>
+        <div class="waveform" id="waveform">
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div><div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+        </div>
+        <div class="voice-transcript" id="voice-transcript"></div>
+      </div>
+
+      <div class="divider">or fill manually</div>
+
+      <!-- Route fields -->
+      <div class="route-grid">
+        <div class="field-group">
+          <div class="field-label">From</div>
+          <select class="select-input" id="travel-from">
+            <option value="">Select city</option>
+            <option value="BOM">Mumbai (BOM)</option>
+            <option value="DEL">Delhi (DEL)</option>
+            <option value="BLR">Bengaluru (BLR)</option>
+            <option value="HYD">Hyderabad (HYD)</option>
+            <option value="MAA">Chennai (MAA)</option>
+            <option value="CCU">Kolkata (CCU)</option>
+            <option value="PNQ">Pune (PNQ)</option>
+            <option value="AMD">Ahmedabad (AMD)</option>
+            <option value="COK">Kochi (COK)</option>
+            <option value="GOI">Goa (GOI)</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <div class="field-label">To</div>
+          <select class="select-input" id="travel-to">
+            <option value="">Select city</option>
+            <option value="DEL">Delhi (DEL)</option>
+            <option value="BOM">Mumbai (BOM)</option>
+            <option value="BLR">Bengaluru (BLR)</option>
+            <option value="HYD">Hyderabad (HYD)</option>
+            <option value="MAA">Chennai (MAA)</option>
+            <option value="CCU">Kolkata (CCU)</option>
+            <option value="PNQ">Pune (PNQ)</option>
+            <option value="AMD">Ahmedabad (AMD)</option>
+            <option value="COK">Kochi (COK)</option>
+            <option class="GOI">Goa (GOI)</option>
+          </select>
+        </div>
+      </div>
+      <div class="route-grid">
+        <div class="field-group">
+          <div class="field-label">Travel Date</div>
+          <input class="select-input" type="date" id="travel-date">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Class</div>
+          <select class="select-input" id="travel-class">
+            <option value="economy">Economy</option>
+            <option value="premium_economy">Premium Economy</option>
+            <option value="business">Business</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn-search-travel" onclick="startTravelSearch()">
+        <span>✈️</span> Find Cheapest Flight
+      </button>
+
+      <!-- Search progress — travel -->
+      <div class="progress-section" id="progress-travel">
+        <div class="progress-label">Searching across OTAs...</div>
+        <div class="agent-row">
+          <div class="agent-name">
+            <div class="platform-dot-sm" style="background:var(--mmt)"></div>
+            MakeMyTrip
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="prog-mmt"></div></div>
+          <div class="agent-status" id="status-mmt">–</div>
+        </div>
+        <div class="agent-row">
+          <div class="agent-name">
+            <div class="platform-dot-sm" style="background:var(--goibibo)"></div>
+            Goibibo
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="prog-goibibo"></div></div>
+          <div class="agent-status" id="status-goibibo">–</div>
+        </div>
+        <div class="agent-row">
+          <div class="agent-name">
+            <div class="platform-dot-sm" style="background:var(--cleartrip)"></div>
+            Cleartrip
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="prog-cleartrip"></div></div>
+          <div class="agent-status" id="status-cleartrip">–</div>
+        </div>
+      </div>
+
+      <!-- Savings banner — travel -->
+      <div class="savings-banner" id="savings-travel">
+        <div class="savings-label">Cheapest fare found</div>
+        <div class="savings-value" id="savings-value-travel">₹0</div>
+        <div class="savings-note" id="savings-note-travel">with your best card applied</div>
+      </div>
+
+      <!-- Results — travel -->
+      <div class="results-list" id="results-travel"></div>
+
+      <!-- Nova Reasoning — travel -->
+      <div class="nova-reasoning" id="nova-reasoning-travel">
+        <button class="nova-reasoning-toggle" onclick="toggleReasoning('travel')">
+          🧠 Nova's reasoning
+          <span class="toggle-arrow" id="arrow-travel">▾</span>
+        </button>
+        <div class="nova-reasoning-body" id="reasoning-body-travel">
+          Goibibo wins because SBI's 14% discount (₹831) is higher than HDFC's 8% on Cleartrip (₹475) or MakeMyTrip's standard rate. The same IndiGo 6E-204 flight is priced ₹1,001 lower on Goibibo before card discounts.
+        </div>
+      </div>
+
+    </div><!-- /screen-travel -->
+
+    <!-- ══ SETTINGS PANEL ══════════════════════════════════════ -->
+    <div class="settings-panel" id="settings-panel">
+      <div class="settings-title">
+        <button class="settings-back" onclick="toggleSettings()">←</button>
+        Settings
+      </div>
+
+      <div>
+        <div class="settings-section-label">Your Bank Cards</div>
+        <p class="settings-note" style="margin-bottom:8px">Select the cards you hold. FareWise applies the best offer automatically. We never store card numbers.</p>
+        <div class="card-chip-list" id="card-chips">
+          <div class="card-chip selected" data-card="HDFC Regalia" onclick="toggleCard(this)"><span class="chip-check">✓</span> HDFC Regalia</div>
+          <div class="card-chip" data-card="HDFC Millennia" onclick="toggleCard(this)"><span class="chip-check">✓</span> HDFC Millennia</div>
+          <div class="card-chip selected" data-card="SBI SimplyCLICK" onclick="toggleCard(this)"><span class="chip-check">✓</span> SBI SimplyCLICK</div>
+          <div class="card-chip" data-card="SBI Cashback" onclick="toggleCard(this)"><span class="chip-check">✓</span> SBI Cashback</div>
+          <div class="card-chip selected" data-card="Axis Flipkart" onclick="toggleCard(this)"><span class="chip-check">✓</span> Axis Flipkart</div>
+          <div class="card-chip" data-card="Axis Magnus" onclick="toggleCard(this)"><span class="chip-check">✓</span> Axis Magnus</div>
+          <div class="card-chip" data-card="ICICI Amazon Pay" onclick="toggleCard(this)"><span class="chip-check">✓</span> ICICI Amazon Pay</div>
+          <div class="card-chip" data-card="Kotak Essentia" onclick="toggleCard(this)"><span class="chip-check">✓</span> Kotak Essentia</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="settings-section-label">Backend API URL</div>
+        <input class="api-input" id="api-url" type="text"
+               placeholder="http://localhost:8000"
+               value="http://localhost:8000">
+        <p class="settings-note" style="margin-top:6px">FareWise backend server (FastAPI). Run locally or deploy to AWS.</p>
+      </div>
+
+      <div>
+        <div class="settings-section-label">Default Mode</div>
+        <select class="select-input" id="default-mode">
+          <option value="products">📦 Products</option>
+          <option value="travel">✈️ Travel</option>
+        </select>
+      </div>
+
+      <button class="btn-save" onclick="saveSettings()">Save Settings</button>
+
+      <div class="settings-note">
+        v1.0.0 · Amazon Nova AI Hackathon 2026<br>
+        No card numbers or payment info is ever stored.
+      </div>
+    </div>
+
+  </div><!-- /scroll-area -->
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <div class="status-text" id="status-text">Ready</div>
+    <div class="status-model">Nova Act</div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast">
+    <span id="toast-icon">✓</span>
+    <span id="toast-msg">Settings saved</span>
+  </div>
+
+  <script>
+  // ── STATE ───────────────────────────────────────────────────────
+  const state = {
+    mode: 'products',       // 'products' | 'travel'
+    showSettings: false,
+    pastedImage: null,      // base64 image data
+    voiceActiveProducts: false,
+    voiceActiveTravel: false,
+    wsProducts: null,
+    wsTravel: null,
+    selectedCards: ['HDFC Regalia', 'SBI SimplyCLICK', 'Axis Flipkart'],
+    apiUrl: 'http://localhost:8000',
+    recognition: null,
+  };
+
+  // ── INIT ────────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    loadSettings();
+    setTodayAsMinDate();
+    // Paste listener for screenshots
+    document.addEventListener('paste', handlePaste);
+  });
+
+  function setTodayAsMinDate() {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('travel-date').min = today;
+    document.getElementById('travel-date').value = today;
+  }
+
+  // ── MODE SWITCHING ──────────────────────────────────────────────
+  function switchMode(mode) {
+    state.mode = mode;
+    // Toggle screens
+    document.getElementById('screen-products').classList.toggle('active', mode === 'products');
+    document.getElementById('screen-travel').classList.toggle('active', mode === 'travel');
+    // Toggle settings visibility
+    if (state.showSettings) toggleSettings();
+    // Update buttons
+    const btnP = document.getElementById('btn-products');
+    const btnT = document.getElementById('btn-travel');
+    btnP.className = 'mode-btn' + (mode === 'products' ? ' active-products' : '');
+    btnT.className = 'mode-btn' + (mode === 'travel'   ? ' active-travel'   : '');
+    // Scroll to top
+    document.getElementById('scroll-area').scrollTop = 0;
+  }
+
+  // ── SETTINGS ────────────────────────────────────────────────────
+  function toggleSettings() {
+    state.showSettings = !state.showSettings;
+    document.getElementById('settings-panel').classList.toggle('show', state.showSettings);
+    document.getElementById('screen-products').classList.toggle('active',
+      !state.showSettings && state.mode === 'products');
+    document.getElementById('screen-travel').classList.toggle('active',
+      !state.showSettings && state.mode === 'travel');
+  }
+
+  function toggleCard(el) {
+    el.classList.toggle('selected');
+    const card = el.dataset.card;
+    if (el.classList.contains('selected')) {
+      if (!state.selectedCards.includes(card)) state.selectedCards.push(card);
+    } else {
+      state.selectedCards = state.selectedCards.filter(c => c !== card);
+    }
+  }
+
+  function saveSettings() {
+    state.apiUrl = document.getElementById('api-url').value.trim() || 'http://localhost:8000';
+    // Save to chrome.storage.local if available, else localStorage
+    const data = { selectedCards: state.selectedCards, apiUrl: state.apiUrl,
+                   defaultMode: document.getElementById('default-mode').value };
+    try { chrome.storage.local.set(data); } catch(e) { localStorage.setItem('fw', JSON.stringify(data)); }
+    showToast('✓', 'Settings saved');
+    toggleSettings();
+  }
+
+  function loadSettings() {
+    const load = (data) => {
+      if (data.selectedCards) {
+        state.selectedCards = data.selectedCards;
+        document.querySelectorAll('.card-chip').forEach(el => {
+          const selected = data.selectedCards.includes(el.dataset.card);
+          el.classList.toggle('selected', selected);
+        });
+      }
+      if (data.apiUrl) {
+        state.apiUrl = data.apiUrl;
+        document.getElementById('api-url').value = data.apiUrl;
+      }
+    };
+    try {
+      chrome.storage.local.get(['selectedCards','apiUrl','defaultMode'], load);
+    } catch(e) {
+      const d = localStorage.getItem('fw');
+      if (d) load(JSON.parse(d));
+    }
+  }
+
+  // ── PASTE HANDLER ────────────────────────────────────────────────
+  function handlePaste(e) {
+    if (state.mode !== 'products' || state.showSettings) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        loadImageFile(file);
+        break;
+      }
+    }
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    document.getElementById('drop-zone').classList.add('drag-over');
+  }
+  function handleDragLeave(e) {
+    document.getElementById('drop-zone').classList.remove('drag-over');
+  }
+  function handleDrop(e) {
+    e.preventDefault();
+    document.getElementById('drop-zone').classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) loadImageFile(file);
+  }
+  function handleFileInput(e) {
+    const file = e.target.files[0];
+    if (file) loadImageFile(file);
+  }
+
+  function loadImageFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      state.pastedImage = e.target.result;
+      document.getElementById('preview-img').src = e.target.result;
+      document.getElementById('paste-preview').style.display = 'block';
+      document.getElementById('drop-zone').style.display = 'none';
+      showToast('📋', 'Image ready — tap "Find Best Price"');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearPreview() {
+    state.pastedImage = null;
+    document.getElementById('paste-preview').style.display = 'none';
+    document.getElementById('drop-zone').style.display = 'block';
+    document.getElementById('file-input').value = '';
+  }
+
+  // ── VOICE — PRODUCTS ────────────────────────────────────────────
+  function toggleVoiceProducts() {
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      showToast('⚠️', 'Voice not supported in this browser');
+      return;
+    }
+    const btn = document.getElementById('voice-btn-products');
+    if (state.voiceActiveProducts) {
+      state.voiceActiveProducts = false;
+      btn.classList.remove('voice-active');
+      if (state.recognition) state.recognition.stop();
+      return;
+    }
+    state.voiceActiveProducts = true;
+    btn.classList.add('voice-active');
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    state.recognition = new SR();
+    state.recognition.lang = 'en-IN';
+    state.recognition.continuous = false;
+    state.recognition.interimResults = false;
+    state.recognition.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      document.getElementById('product-query').value = text;
+      state.voiceActiveProducts = false;
+      btn.classList.remove('voice-active');
+    };
+    state.recognition.onerror = () => {
+      state.voiceActiveProducts = false;
+      btn.classList.remove('voice-active');
+      showToast('⚠️', 'Could not hear you. Try again.');
+    };
+    state.recognition.onend = () => {
+      state.voiceActiveProducts = false;
+      btn.classList.remove('voice-active');
+    };
+    state.recognition.start();
+  }
+
+  // ── VOICE — TRAVEL ──────────────────────────────────────────────
+  function toggleVoiceTravel() {
+    const area   = document.getElementById('voice-area');
+    const micBtn = document.getElementById('mic-btn');
+    const label  = document.getElementById('voice-label');
+    const sub    = document.getElementById('voice-sub');
+    const wave   = document.getElementById('waveform');
+    const trans  = document.getElementById('voice-transcript');
+
+    if (state.voiceActiveTravel) {
+      state.voiceActiveTravel = false;
+      area.classList.remove('listening');
+      micBtn.classList.remove('listening');
+      wave.classList.remove('show');
+      trans.style.display = 'none';
+      label.textContent = 'Tap to speak your route';
+      sub.textContent = '"Mumbai to Delhi, this Friday"';
+      if (state.recognition) state.recognition.stop();
+      return;
+    }
+
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      showToast('⚠️', 'Voice not supported in this browser');
+      return;
+    }
+
+    state.voiceActiveTravel = true;
+    area.classList.add('listening');
+    micBtn.classList.add('listening');
+    micBtn.textContent = '🔴';
+    wave.classList.add('show');
+    trans.style.display = 'block';
+    trans.textContent = 'Listening...';
+    label.textContent = 'Listening...';
+    sub.textContent = 'Speak clearly';
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    state.recognition = new SR();
+    state.recognition.lang = 'en-IN';
+    state.recognition.continuous = false;
+    state.recognition.interimResults = true;
+
+    state.recognition.onresult = (e) => {
+      const interim = Array.from(e.results).map(r => r[0].transcript).join('');
+      trans.textContent = interim;
+      if (e.results[0].isFinal) {
+        parseVoiceRoute(interim);
+        setTimeout(() => toggleVoiceTravel(), 300);
+      }
+    };
+    state.recognition.onerror = () => {
+      showToast('⚠️', 'Could not hear you. Try again.');
+      toggleVoiceTravel();
+    };
+    state.recognition.start();
+  }
+
+  function parseVoiceRoute(text) {
+    // Simple parser — in real app this calls Nova Sonic via backend
+    const lc = text.toLowerCase();
+    const cities = {
+      'mumbai': 'BOM', 'delhi': 'DEL', 'bangalore': 'BLR', 'bengaluru': 'BLR',
+      'hyderabad': 'HYD', 'chennai': 'MAA', 'kolkata': 'CCU', 'pune': 'PNQ',
+      'goa': 'GOI', 'ahmedabad': 'AMD', 'kochi': 'COK'
+    };
+    const matches = Object.entries(cities).filter(([k]) => lc.includes(k));
+    if (matches.length >= 2) {
+      document.getElementById('travel-from').value = matches[0][1];
+      document.getElementById('travel-to').value   = matches[1][1];
+    }
+    // Date parsing: "this friday", "next monday", etc.
+    const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+    for (const [i, d] of days.entries()) {
+      if (lc.includes(d)) {
+        const today = new Date();
+        const diff = (i - today.getDay() + 7) % 7 || 7;
+        const target = new Date(today);
+        target.setDate(today.getDate() + diff);
+        document.getElementById('travel-date').value = target.toISOString().split('T')[0];
+        break;
+      }
+    }
+    showToast('✓', 'Route parsed from voice');
+  }
+
+  // ── PRODUCT SEARCH ───────────────────────────────────────────────
+  function startProductSearch() {
+    const query = document.getElementById('product-query').value.trim();
+    if (!query && !state.pastedImage) {
+      showToast('⚠️', 'Enter a product name or paste a screenshot');
+      return;
+    }
+
+    resetProductResults();
+    setStatus('connecting', 'Connecting to FareWise backend...');
+
+    // Close any previous WebSocket
+    if (state.wsProducts) { try { state.wsProducts.close(); } catch(e){} }
+
+    const taskId = Date.now();
+    const wsUrl  = `${state.apiUrl.replace('http', 'ws')}/ws/search/${taskId}`;
+
+    try {
+      const ws = new WebSocket(wsUrl);
+      state.wsProducts = ws;
+
+      ws.onopen = () => {
+        setStatus('connected', 'Identifying product...');
+        ws.send(JSON.stringify({
+          mode:      'products',
+          query:     query,
+          image_b64: state.pastedImage || null,
+          cards:     state.selectedCards,
+        }));
+      };
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        handleProductMessage(msg);
+      };
+
+      ws.onerror = () => {
+        console.error('[FareWise] Backend unreachable');
+        showBackendError('products');
+      };
+
+      ws.onclose = (e) => {
+        if (e.code !== 1000 && e.code !== 1005) {
+          console.warn('[FareWise] WS closed unexpectedly:', e.code);
+        }
+        state.wsProducts = null;
+      };
+
+    } catch (err) {
+      console.error('[FareWise] WebSocket connection failed:', err);
+      showBackendError('products');
+    }
+  }
+
+  function handleProductMessage(msg) {
+    switch (msg.type) {
+      case 'progress':
+        setStatus('connected', msg.message || 'Working...');
+        break;
+
+      case 'identified':
+        const confPct  = Math.round((msg.confidence || 0.8) * 100);
+        const confLevel = confPct >= 85 ? 'high' : confPct >= 60 ? 'medium' : 'low';
+        showIdentification(msg.product_name, confLevel, confPct);
+        setStatus('connected', 'Searching platforms...');
+        showProductProgress();
+        // Start indeterminate progress bars while agents run
+        document.getElementById('status-amazon').textContent   = 'Searching';
+        document.getElementById('status-flipkart').textContent = 'Searching';
+        break;
+
+      case 'agent_start':
+        if (msg.agent === 'amazon')   document.getElementById('status-amazon').textContent   = 'Searching…';
+        if (msg.agent === 'flipkart') document.getElementById('status-flipkart').textContent = 'Searching…';
+        break;
+
+      case 'agent_done':
+        if (msg.agent === 'amazon')   { document.getElementById('prog-amazon').style.width   = '100%'; document.getElementById('status-amazon').textContent   = `${msg.count} found`; }
+        if (msg.agent === 'flipkart') { document.getElementById('prog-flipkart').style.width = '100%'; document.getElementById('status-flipkart').textContent = `${msg.count} found`; }
+        break;
+
+      case 'results':
+        renderProductResults(msg);
+        break;
+
+      case 'done':
+        setStatus('connected', 'Done');
+        break;
+
+      case 'error':
+        setStatus('error', msg.message || 'Search failed');
+        showToast('⚠️', msg.message || 'Search failed');
+        break;
+    }
+  }
+
+  function renderProductResults(msg) {
+    const winner  = msg.winner  || {};
+    const allResults = msg.all || msg.all_results || [];
+    const PLATFORM_LABELS = { amazon: 'Amazon India', flipkart: 'Flipkart' };
+    const PLATFORM_COLORS = { amazon: 'var(--amazon)', flipkart: 'var(--flipkart)' };
+
+    // Sort: winner first
+    const sorted = [...allResults].sort((a, b) => (a.rank || 99) - (b.rank || 99));
+
+    sorted.forEach((r, i) => {
+      const isWinner = r.platform === winner.platform;
+      const raw      = r.price_raw      || r.price    || 0;
+      const eff      = r.price_effective || raw;
+      const saving   = raw - eff;
+      const discPct  = raw > 0 ? Math.round((saving / raw) * 100) : 0;
+      const label    = PLATFORM_LABELS[r.platform] || r.platform;
+
+      renderProductCard({
+        platform:    label,
+        color:       PLATFORM_COLORS[r.platform] || '#888',
+        price:       eff,
+        base:        raw,
+        card:        r.card_used   || winner.card_used || null,
+        discount:    discPct,
+        discountAmt: saving,
+        delivery:    0,
+        days:        r.delivery_days || 2,
+        url:         r.url          || winner.buy_url || '#',
+        winner:      isWinner,
+        cashback:    r.cashback     || null,
+        seller:      r.seller       || label,
+      }, i);
+    });
+
+    if (winner.saving_vs_max) {
+      showSavings('products', winner.saving_vs_max);
+    }
+    if (msg.reasoning) {
+      showReasoningText('products', msg.reasoning);
+    }
+    setStatus('connected', `Done · ${sorted.length} results`);
+  }
+
+  // ── Backend offline error card ────────────────────────────────────
+  function showBackendError(mode) {
+    const listId = mode === 'travel' ? 'results-travel' : 'results-products';
+    const list   = document.getElementById(listId);
+    const retryFn = mode === 'travel' ? 'startTravelSearch()' : 'startProductSearch()';
+
+    setStatus('error', 'Backend offline');
+
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.style.borderLeft = '3px solid var(--red)';
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0"></div>
+        <div style="font-weight:600;color:var(--red);font-size:13px">Backend offline</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5">
+        Cannot reach <code style="background:rgba(255,95,95,0.12);padding:1px 5px;border-radius:3px">${state.apiUrl}</code>
+        <br>Start the backend: <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px">uvicorn main:app --reload</code>
+      </div>
+      <button class="btn-view" style="border-color:var(--red);color:var(--red)"
+              onclick="${retryFn}">⟳ Retry</button>
+    `;
+    list.appendChild(card);
+  }
+
+  function showIdentification(name, confidence, pct) {
+    const el = document.getElementById('id-result');
+    const dot = document.getElementById('id-dot');
+    const nameEl = document.getElementById('id-name');
+    const confEl = document.getElementById('id-conf');
+    el.classList.add('show');
+    dot.className = 'id-dot ' + confidence;
+    nameEl.textContent = name;
+    confEl.className = 'id-conf ' + confidence;
+    confEl.textContent = `● ${pct}% confidence`;
+  }
+
+  function showProductProgress() {
+    document.getElementById('progress-products').classList.add('show');
+  }
+
+  function animateProgress(fillId, statusId, duration, onComplete) {
+    const fill   = document.getElementById(fillId);
+    const status = document.getElementById(statusId);
+    status.textContent = 'Searching';
+    let pct = 0;
+    const step = 100 / (duration / 50);
+    const timer = setInterval(() => {
+      pct = Math.min(pct + step + Math.random() * 2, 98);
+      fill.style.width = pct + '%';
+    }, 50);
+    setTimeout(() => {
+      clearInterval(timer);
+      fill.style.width = '100%';
+      status.textContent = 'Done';
+      status.className = 'agent-status done';
+      onComplete?.();
+    }, duration);
+  }
+
+  function renderProductCard(data, delay) {
+    const list = document.getElementById('results-products');
+    const card = document.createElement('div');
+    card.className = 'result-card' + (data.winner ? ' winner' : '');
+    card.style.animationDelay = delay * 0.1 + 's';
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="card-platform">
+          <div class="card-platform-dot" style="background:${data.color}"></div>
+          <div class="card-platform-name">${data.platform}</div>
+        </div>
+        ${data.winner ? '<div class="winner-chip">★ BEST DEAL</div>' : ''}
+      </div>
+      <div class="card-price">₹${data.price.toLocaleString('en-IN')}</div>
+      <div class="card-breakdown">
+        ₹${data.base.toLocaleString('en-IN')} −
+        <span class="card-off">${data.discount}% ${data.card} (−₹${data.discountAmt.toLocaleString('en-IN')})</span>
+        − ₹${data.delivery} delivery
+      </div>
+      <div class="card-meta">
+        <div class="card-meta-item">📦 ${data.days}d delivery</div>
+        <div class="card-meta-item">🏪 ${data.seller}</div>
+        ${data.cashback ? `<div class="card-cashback">⏱ ${data.cashback}</div>` : ''}
+      </div>
+      ${data.winner
+        ? `<button class="btn-buy" onclick="openUrl('${data.url}')">Buy on ${data.platform} →</button>`
+        : `<button class="btn-view" onclick="openUrl('${data.url}')">View on ${data.platform}</button>`
+      }
+    `;
+    list.appendChild(card);
+  }
+
+  // ── TRAVEL SEARCH ────────────────────────────────────────────────
+  function startTravelSearch() {
+    const from  = document.getElementById('travel-from').value;
+    const to    = document.getElementById('travel-to').value;
+    const date  = document.getElementById('travel-date').value;
+
+    if (!from || !to) { showToast('⚠️', 'Select origin and destination'); return; }
+    if (from === to)  { showToast('⚠️', 'Origin and destination must differ'); return; }
+
+    resetTravelResults();
+    setStatus('connecting', 'Connecting to FareWise backend...');
+    document.getElementById('progress-travel').classList.add('show');
+
+    if (state.wsTravel) { try { state.wsTravel.close(); } catch(e){} }
+
+    const taskId = Date.now();
+    const wsUrl  = `${state.apiUrl.replace('http', 'ws')}/ws/search/${taskId}`;
+
+    try {
+      const ws = new WebSocket(wsUrl);
+      state.wsTravel = ws;
+
+      ws.onopen = () => {
+        setStatus('connected', 'Searching flights...');
+        ws.send(JSON.stringify({
+          mode:  'travel',
+          route: { from, to, date, class: 'economy' },
+          cards: state.selectedCards,
+        }));
+      };
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        handleTravelMessage(msg);
+      };
+
+      ws.onerror = () => {
+        console.error('[FareWise] Backend unreachable');
+        showBackendError('travel');
+      };
+
+      ws.onclose = () => { state.wsTravel = null; };
+
+    } catch (err) {
+      console.error('[FareWise] WebSocket connection failed:', err);
+      showBackendError('travel');
+    }
+  }
+
+  function handleTravelMessage(msg) {
+    switch (msg.type) {
+      case 'progress':
+        setStatus('connected', msg.message || 'Searching...');
+        break;
+
+      case 'agent_start':
+        const startMap = { makemytrip: 'status-mmt', goibibo: 'status-goibibo', cleartrip: 'status-cleartrip' };
+        if (startMap[msg.agent]) document.getElementById(startMap[msg.agent]).textContent = 'Searching…';
+        break;
+
+      case 'agent_done':
+        const doneMap = {
+          makemytrip: ['prog-mmt', 'status-mmt'],
+          goibibo:    ['prog-goibibo', 'status-goibibo'],
+          cleartrip:  ['prog-cleartrip', 'status-cleartrip'],
+        };
+        if (doneMap[msg.agent]) {
+          document.getElementById(doneMap[msg.agent][0]).style.width = '100%';
+          document.getElementById(doneMap[msg.agent][1]).textContent = `${msg.count} found`;
+        }
+        break;
+
+      case 'results':
+        renderTravelResults(msg);
+        break;
+
+      case 'done':
+        setStatus('connected', 'Done');
+        break;
+
+      case 'error':
+        setStatus('error', msg.message || 'Flight search failed');
+        showToast('⚠️', msg.message || 'Flight search failed');
+        break;
+    }
+  }
+
+  function renderTravelResults(msg) {
+    const winner     = msg.winner  || {};
+    const allResults = msg.all     || msg.all_results || [];
+    const PLATFORM_LABELS = { makemytrip: 'MakeMyTrip', goibibo: 'Goibibo', cleartrip: 'Cleartrip' };
+    const PLATFORM_COLORS = { makemytrip: 'var(--mmt)', goibibo: 'var(--goibibo)', cleartrip: 'var(--cleartrip)' };
+
+    const sorted = [...allResults].sort((a, b) => (a.rank || 99) - (b.rank || 99));
+
+    sorted.forEach((r, i) => {
+      const isWinner = r.platform === winner.platform;
+      const raw      = r.price_raw      || r.price    || 0;
+      const eff      = r.price_effective || raw;
+      const saving   = raw - eff;
+      const discPct  = raw > 0 ? Math.round((saving / raw) * 100) : 0;
+      const fd       = (r.flight_details || winner.flight_details || {});
+      const label    = PLATFORM_LABELS[r.platform] || r.platform;
+
+      renderFlightCard({
+        platform:    label,
+        color:       PLATFORM_COLORS[r.platform] || '#888',
+        price:       eff,
+        base:        raw,
+        card:        r.card_used || winner.card_used || null,
+        discount:    discPct,
+        discountAmt: saving,
+        convFee:     r.convenience_fee || 0,
+        flight:      fd.airline || 'Unknown',
+        dep:         fd.departure || '--',
+        arr:         fd.arrival   || '--',
+        dur:         fd.duration  || '--',
+        url:         r.book_url  || winner.book_url || '#',
+        winner:      isWinner,
+      }, i);
+    });
+
+    if (winner.saving_vs_max) showSavings('travel', winner.saving_vs_max);
+    if (msg.reasoning)        showReasoningText('travel', msg.reasoning);
+    setStatus('connected', `Done · ${sorted.length} results`);
+  }
+
+  function renderFlightCard(data, delay) {
+    const list = document.getElementById('results-travel');
+    const card = document.createElement('div');
+    card.className = 'result-card' + (data.winner ? ' winner' : '');
+    card.style.animationDelay = delay * 0.12 + 's';
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="card-platform">
+          <div class="card-platform-dot" style="background:${data.color}"></div>
+          <div class="card-platform-name">${data.platform}</div>
+        </div>
+        ${data.winner ? '<div class="winner-chip">★ CHEAPEST</div>' : ''}
+      </div>
+      <div class="flight-no-badge">${data.flight}</div>
+      <div class="flight-info">
+        <div class="flight-time">${data.dep}</div>
+        <div class="flight-arrow"><div class="flight-dur">${data.dur}</div></div>
+        <div class="flight-time">${data.arr}</div>
+      </div>
+      <div class="card-price">₹${data.price.toLocaleString('en-IN')}</div>
+      <div class="card-breakdown">
+        ₹${data.base.toLocaleString('en-IN')} base
+        ${data.discount ? `− <span class="card-off">${data.discount}% ${data.card} (−₹${data.discountAmt.toLocaleString('en-IN')})</span>` : ''}
+        ${data.convFee ? `+ ₹${data.convFee} conv. fee` : '+ ₹0 conv. fee'}
+      </div>
+      ${data.winner
+        ? `<button class="btn-buy" onclick="openUrl('${data.url}')">Book on ${data.platform} →</button>`
+        : `<button class="btn-view" onclick="openUrl('${data.url}')">View on ${data.platform}</button>`
+      }
+    `;
+    list.appendChild(card);
+  }
+
+  // ── SHARED UI HELPERS ────────────────────────────────────────────
+  function showSavings(mode, amount, note) {
+    const banner = document.getElementById(`savings-${mode}`);
+    const valEl  = document.getElementById(`savings-value-${mode}`);
+    banner.classList.add('show');
+    // Animate counter
+    let cur = 0;
+    const step = amount / 30;
+    const t = setInterval(() => {
+      cur = Math.min(cur + step, amount);
+      valEl.textContent = '₹' + Math.floor(cur).toLocaleString('en-IN');
+      if (cur >= amount) clearInterval(t);
+    }, 20);
+    if (note && document.getElementById('savings-note-travel')) {
+      document.getElementById('savings-note-travel').textContent = note;
+    }
+  }
+
+  function showNovaReasoning(mode) {
+    document.getElementById(`nova-reasoning-${mode}`).classList.add('show');
+  }
+
+  function showReasoningText(mode, text) {
+    const body = document.getElementById(`reasoning-body-${mode}`);
+    if (body && text) body.textContent = text;
+    showNovaReasoning(mode);
+  }
+
+  function toggleReasoning(mode) {
+    const body  = document.getElementById(`reasoning-body-${mode}`);
+    const arrow = document.getElementById(`arrow-${mode}`);
+    const open  = body.classList.toggle('open');
+    arrow.classList.toggle('open', open);
+  }
+
+  function editQuery() {
+    document.getElementById('id-result').classList.remove('show');
+    document.getElementById('product-query').focus();
+  }
+
+  function resetProductResults() {
+    document.getElementById('id-result').classList.remove('show');
+    document.getElementById('progress-products').classList.remove('show');
+    document.getElementById('savings-products').classList.remove('show');
+    document.getElementById('nova-reasoning-products').classList.remove('show');
+    document.getElementById('results-products').innerHTML = '';
+    document.getElementById('reasoning-body-products').classList.remove('open');
+    document.getElementById('prog-amazon').style.width = '0%';
+    document.getElementById('prog-flipkart').style.width = '0%';
+    document.getElementById('status-amazon').textContent = '–';
+    document.getElementById('status-amazon').className = 'agent-status';
+    document.getElementById('status-flipkart').textContent = '–';
+    document.getElementById('status-flipkart').className = 'agent-status';
+  }
+
+  function resetTravelResults() {
+    document.getElementById('progress-travel').classList.remove('show');
+    document.getElementById('savings-travel').classList.remove('show');
+    document.getElementById('nova-reasoning-travel').classList.remove('show');
+    document.getElementById('results-travel').innerHTML = '';
+    ['prog-mmt','prog-goibibo','prog-cleartrip'].forEach(id => {
+      document.getElementById(id).style.width = '0%';
+    });
+    ['status-mmt','status-goibibo','status-cleartrip'].forEach(id => {
+      const el = document.getElementById(id);
+      el.textContent = '–';
+      el.className = 'agent-status';
+    });
+  }
+
+  // ── STATUS BAR ───────────────────────────────────────────────────
+  function setStatus(state, text) {
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    dot.className = 'status-dot ' + (state === 'connecting' ? 'connecting' : state === 'error' ? 'error' : '');
+    txt.textContent = text;
+  }
+
+  // ── TOAST ────────────────────────────────────────────────────────
+  let toastTimer = null;
+  function showToast(icon, msg) {
+    const el = document.getElementById('toast');
+    document.getElementById('toast-icon').textContent = icon;
+    document.getElementById('toast-msg').textContent  = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  }
+
+  // ── OPEN URL ─────────────────────────────────────────────────────
+  function openUrl(url) {
+    try { chrome.tabs.create({ url }); } catch(e) { window.open(url, '_blank'); }
+  }
+
+  // ── WebSocket handlers are wired in startProductSearch() and startTravelSearch() above.
+  // When the backend is offline, showBackendError() renders an error card with a Retry button.
+  // For offline demos, load frontend_chrome_extension/demo/demo_data.js separately.
+  </script>
+</body>
+</html>

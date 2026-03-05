@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FareWise — See the real price. Every time.</title>
+  <meta name="description" content="India's AI price intelligence. Compare gadget & flight prices across 5 platforms with your bank card offer — in under 45 seconds. Powered by Amazon Nova.">
+  <meta name="theme-color" content="#4F8EF7">
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* ─── RESET ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    /* ─── TOKENS ──────────────────────────────────────────── */
+    :root {
+      --bg:        #04040E;
+      --surface:   #0A0A1A;
+      --raised:    #101024;
+      --border:    #1A1A36;
+      --border-hi: #28285A;
+      --blue:      #4F8EF7;
+      --blue-dim:  rgba(79,142,247,.12);
+      --blue-line: rgba(79,142,247,.25);
+      --gold:      #F5A623;
+      --gold-line: rgba(245,166,35,.30);
+      --green:     #22D47A;
+      --purple:    #7C5CFC;
+      --t1: #EEEEFF;
+      --t2: #9BA0C4;
+      --t3: #464870;
+      --amazon:    #FF9900;
+      --flipkart:  #2874F0;
+      --mmt:       #D42B2B;
+      --goibibo:   #E8390E;
+      --cleartrip: #E87722;
+      --fh: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      --fb: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+
+    body {
+      font-family: var(--fb);
+      background: var(--bg);
+      color: var(--t1);
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ─── GRID BG ─────────────────────────────────────────── */
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(79,142,247,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(79,142,247,.035) 1px, transparent 1px);
+      background-size: 56px 56px;
+    }
+
+    /* ─── LAYOUT ──────────────────────────────────────────── */
+    .wrap    { max-width: 1140px; margin: 0 auto; padding: 0 40px; }
+    .wrap-sm { max-width: 760px;  margin: 0 auto; padding: 0 40px; }
+    section  { padding: 96px 0; }
+
+    /* ─── TYPE ────────────────────────────────────────────── */
+    .dhead {
+      font-family: var(--fh);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      line-height: 1.06;
+    }
+    .shead {
+      font-family: var(--fh);
+      font-weight: 700;
+      letter-spacing: -0.028em;
+      line-height: 1.15;
+    }
+    .label-tag {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--blue);
+    }
+
+    /* ─── BADGE ───────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--blue-dim);
+      border: 1px solid var(--blue-line);
+      border-radius: 999px;
+      padding: 5px 15px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--blue);
+      letter-spacing: .01em;
+    }
+    .badge-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--blue);
+      animation: pulse 2.2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.75)} }
+
+    /* ─── BUTTONS ─────────────────────────────────────────── */
+    .btn {
+      font-family: var(--fb);
+      font-weight: 600;
+      font-size: 14px;
+      padding: 10px 22px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      transition: all .2s ease;
+      white-space: nowrap;
+      letter-spacing: -.015em;
+    }
+    .btn-primary {
+      background: var(--blue);
+      color: #fff;
+      box-shadow: 0 0 0 1px rgba(79,142,247,.4), 0 4px 20px rgba(79,142,247,.28);
+    }
+    .btn-primary:hover {
+      background: #3f7ee8;
+      transform: translateY(-1px);
+      box-shadow: 0 0 0 1px rgba(79,142,247,.55), 0 8px 28px rgba(79,142,247,.38);
+    }
+    .btn-ghost {
+      background: rgba(255,255,255,.04);
+      color: var(--t2);
+      border: 1px solid var(--border-hi);
+    }
+    .btn-ghost:hover {
+      color: var(--t1);
+      border-color: rgba(255,255,255,.18);
+      background: rgba(255,255,255,.07);
+    }
+
+    /* ─── NAV ─────────────────────────────────────────────── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(4,4,14,.82);
+      backdrop-filter: blur(28px) saturate(180%);
+      -webkit-backdrop-filter: blur(28px) saturate(180%);
+      border-bottom: 1px solid rgba(255,255,255,.055);
+    }
+    .nav-inner {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 40px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+    }
+    .logo {
+      font-family: var(--fh);
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -.04em;
+      color: var(--t1);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-shrink: 0;
+      margin-right: 10px;
+    }
+    .logo-mark {
+      width: 32px; height: 32px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, var(--blue) 0%, var(--purple) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--fh);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: -.04em;
+      color: #fff;
+      box-shadow: 0 0 14px rgba(79,142,247,.38);
+      flex-shrink: 0;
+    }
+    .logo b { color: var(--blue); }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex: 1;
+    }
+    .nav-links a {
+      font-size: 14px;
+      color: var(--t2);
+      text-decoration: none;
+      padding: 6px 14px;
+      border-radius: 8px;
+      transition: color .15s, background .15s;
+      font-weight: 500;
+      letter-spacing: -.015em;
+    }
+    .nav-links a:hover { color: var(--t1); background: rgba(255,255,255,.06); }
+    .nav-cta { margin-left: auto; }
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .nav-inner { justify-content: space-between; padding: 0 20px; }
+    }
+
+    /* ─── HERO ────────────────────────────────────────────── */
+    #hero {
+      padding: 80px 0 64px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-orb-l {
+      position: absolute;
+      top: -160px; left: -140px;
+      width: 680px; height: 680px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(79,142,247,.16) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    .hero-orb-r {
+      position: absolute;
+      bottom: -120px; right: -100px;
+      width: 520px; height: 520px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(124,92,252,.09) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    .hero-inner {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 40px;
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 64px;
+      align-items: center;
+      position: relative;
+    }
+    /* Hero elements use CSS animation (not IntersectionObserver) so they're visible immediately */
+    .h-in   { animation: hIn .55s cubic-bezier(.2,.8,.4,1) both; }
+    .h-in.d1 { animation-delay: .08s; }
+    .h-in.d2 { animation-delay: .18s; }
+    .h-in.d3 { animation-delay: .30s; }
+    @keyframes hIn { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
+
+    .hero-badge { margin-bottom: 24px; }
+    .hero-title {
+      font-family: var(--fh);
+      font-size: clamp(36px, 3.4vw, 54px);
+      font-weight: 800;
+      line-height: 1.06;
+      letter-spacing: -0.038em;
+      margin-bottom: 22px;
+      color: var(--t1);
+    }
+    .hero-title .t-blue { color: var(--blue); }
+    .hero-title .t-gold { color: var(--gold); }
+    .hero-sub {
+      font-size: 16px;
+      color: var(--t2);
+      line-height: 1.72;
+      margin-bottom: 32px;
+      max-width: 440px;
+      letter-spacing: -.015em;
+    }
+    .hero-ctas { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 44px; }
+    .hero-stats {
+      display: flex;
+      gap: 32px;
+      padding-top: 28px;
+      border-top: 1px solid var(--border);
+    }
+    .stat-val {
+      font-family: var(--fh);
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+    }
+    .stat-label { font-size: 11.5px; color: var(--t3); margin-top: 3px; letter-spacing: .01em; }
+
+    /* ─── MOCK PANEL ──────────────────────────────────────── */
+    .mock-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      animation: float 6s ease-in-out infinite;
+    }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+    .mock-panel {
+      width: 100%;
+      max-width: 368px;
+      background: rgba(10,10,26,.95);
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow:
+        0 48px 96px rgba(0,0,12,.85),
+        0 0 0 1px rgba(79,142,247,.09),
+        inset 0 1px 0 rgba(255,255,255,.06);
+    }
+    .mock-header {
+      padding: 12px 14px;
+      background: rgba(4,4,14,.9);
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mock-logo {
+      font-family: var(--fh);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: -.04em;
+      color: var(--t1);
+    }
+    .mock-logo b { color: var(--blue); }
+    .mock-tabs {
+      flex: 1;
+      display: flex;
+      background: var(--raised);
+      border-radius: 999px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .mock-tab {
+      flex: 1;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 4px 6px;
+      border-radius: 999px;
+      color: var(--t2);
+      font-family: var(--fb);
+      letter-spacing: -.01em;
+    }
+    .mock-tab.active { background: var(--blue); color: #fff; }
+    .mock-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .mock-identified {
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mock-conf-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+      box-shadow: 0 0 6px rgba(34,212,122,.6);
+    }
+    .mock-prod-name { font-size: 12px; font-weight: 600; color: var(--t1); letter-spacing: -.015em; }
+    .mock-conf-label { font-size: 10px; color: var(--green); }
+    .mock-savings {
+      background: linear-gradient(135deg, rgba(34,212,122,.08), rgba(79,142,247,.05));
+      border: 1px solid rgba(34,212,122,.2);
+      border-radius: 10px;
+      padding: 12px 14px;
+      text-align: center;
+    }
+    .mock-savings-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--green); margin-bottom: 2px; }
+    .mock-savings-val {
+      font-family: var(--fh);
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      color: var(--green);
+      text-shadow: 0 0 24px rgba(34,212,122,.35);
+    }
+    .mock-result {
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .mock-result.winner {
+      background: linear-gradient(135deg, rgba(245,166,35,.07), rgba(245,166,35,.02));
+      border-color: rgba(245,166,35,.26);
+    }
+    .mock-result-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .mock-platform { font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 5px; letter-spacing: -.015em; }
+    .mock-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .mock-best { background: var(--gold); color: #000; font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+    .mock-price {
+      font-family: var(--fh);
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .mock-price-detail { font-size: 10px; color: var(--t3); margin-top: 2px; letter-spacing: -.01em; }
+    .mock-buy-btn {
+      width: 100%;
+      margin-top: 10px;
+      background: var(--gold);
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      padding: 7px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--fb);
+      cursor: pointer;
+      letter-spacing: -.015em;
+    }
+    .mock-status {
+      text-align: center;
+      font-size: 9.5px;
+      color: var(--t3);
+      padding-top: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .status-dot-live { width: 5px; height: 5px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+
+    /* ─── PLATFORMS STRIP ─────────────────────────────────── */
+    #platforms {
+      padding: 22px 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .platforms-inner {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 40px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .platforms-label { font-size: 11.5px; color: var(--t3); font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+    .platforms-divider { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+    .platforms-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .platform-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 5px 13px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--t2);
+      white-space: nowrap;
+      letter-spacing: -.015em;
+      transition: border-color .18s, color .18s;
+    }
+    .platform-chip:hover { color: var(--t1); border-color: var(--border-hi); }
+    .chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ─── SECTION HEADER ──────────────────────────────────── */
+    .section-top { text-align: center; margin-bottom: 56px; }
+    .section-top .label-tag { margin-bottom: 12px; }
+    .section-top .shead { font-size: clamp(26px, 3vw, 38px); color: var(--t1); }
+    .section-top .section-sub {
+      font-size: 15.5px;
+      color: var(--t2);
+      max-width: 480px;
+      margin: 14px auto 0;
+      line-height: 1.7;
+      letter-spacing: -.015em;
+    }
+
+    /* ─── MODE TABS ───────────────────────────────────────── */
+    .mode-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 3px;
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px;
+      width: fit-content;
+      margin: 0 auto 44px;
+    }
+    .mode-tab-btn {
+      font-family: var(--fb);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 20px;
+      border-radius: 999px;
+      border: none;
+      background: transparent;
+      color: var(--t2);
+      cursor: pointer;
+      transition: all .2s ease;
+      letter-spacing: -.015em;
+    }
+    .mode-tab-btn.active { background: var(--blue); color: #fff; box-shadow: 0 0 12px rgba(79,142,247,.3); }
+    .mode-tab-btn:not(.active):hover { color: var(--t1); background: rgba(255,255,255,.06); }
+
+    /* ─── HOW IT WORKS ────────────────────────────────────── */
+    .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .step-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 30px 26px;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .step-card:hover { border-color: var(--border-hi); box-shadow: 0 12px 40px rgba(0,0,12,.5); }
+    .step-num {
+      font-family: var(--fh);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--blue);
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      opacity: .75;
+    }
+    .step-icon { font-size: 28px; margin-bottom: 14px; }
+    .step-title {
+      font-family: var(--fh);
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--t1);
+      margin-bottom: 10px;
+      letter-spacing: -.025em;
+      line-height: 1.3;
+    }
+    .step-desc { font-size: 13.5px; color: var(--t2); line-height: 1.65; letter-spacing: -.015em; }
+
+    /* ─── DEMO ────────────────────────────────────────────── */
+    #demo { background: var(--surface); padding: 0; }
+    .demo-inner {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 80px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+    }
+    .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+    .demo-controls { display: flex; flex-direction: column; gap: 12px; }
+    .demo-input-group { display: flex; flex-direction: column; gap: 10px; }
+    .demo-input {
+      font-family: var(--fb);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: var(--t1);
+      font-size: 13.5px;
+      width: 100%;
+      transition: border-color .2s, box-shadow .2s;
+      letter-spacing: -.015em;
+      appearance: none;
+    }
+    .demo-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-dim); }
+    .demo-input::placeholder { color: var(--t3); }
+    .demo-btn {
+      font-family: var(--fb);
+      font-size: 13.5px;
+      font-weight: 600;
+      padding: 11px 20px;
+      border-radius: 10px;
+      border: none;
+      background: var(--blue);
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 0 0 1px rgba(79,142,247,.4), 0 4px 14px rgba(79,142,247,.22);
+      transition: all .2s ease;
+      letter-spacing: -.015em;
+    }
+    .demo-btn:hover { background: #3f7ee8; transform: translateY(-1px); }
+    .demo-cards-label {
+      font-family: var(--fh);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--t3);
+      text-transform: uppercase;
+      letter-spacing: .09em;
+      margin-bottom: 12px;
+    }
+    .demo-card-grid { display: flex; flex-direction: column; gap: 10px; }
+    .demo-result-card {
+      background: var(--raised);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 18px;
+    }
+    .demo-result-card.winner-card {
+      background: linear-gradient(135deg, rgba(245,166,35,.08), rgba(245,166,35,.02));
+      border-color: rgba(245,166,35,.28);
+    }
+    .demo-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .demo-platform-name { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--t2); letter-spacing: -.015em; }
+    .dpc { width: 8px; height: 8px; border-radius: 50%; }
+    .winner-badge { background: var(--gold); color: #000; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+    .demo-price { font-family: var(--fh); font-size: 26px; font-weight: 800; letter-spacing: -0.035em; margin-bottom: 4px; }
+    .demo-price-detail { font-size: 12px; color: var(--t3); letter-spacing: -.015em; }
+    .demo-saving { font-size: 11.5px; color: var(--green); font-weight: 600; margin-top: 4px; }
+    .demo-summary {
+      background: var(--blue-dim);
+      border: 1px solid var(--blue-line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: var(--t2);
+      line-height: 1.6;
+      letter-spacing: -.015em;
+    }
+    .demo-summary b { color: var(--blue); font-weight: 600; }
+
+    /* ─── TECH ────────────────────────────────────────────── */
+    .tech-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .tech-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px 22px;
+      transition: border-color .2s, transform .22s;
+    }
+    .tech-card:hover { border-color: var(--border-hi); transform: translateY(-3px); }
+    .tech-icon {
+      width: 46px; height: 46px;
+      border-radius: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 21px;
+      margin-bottom: 16px;
+    }
+    .tech-name { font-family: var(--fh); font-size: 14px; font-weight: 700; margin-bottom: 4px; letter-spacing: -.025em; }
+    .tech-role { font-size: 11.5px; color: var(--blue); font-weight: 600; margin-bottom: 8px; letter-spacing: -.01em; }
+    .tech-desc { font-size: 12.5px; color: var(--t2); line-height: 1.62; letter-spacing: -.015em; }
+
+    /* ─── BANK CARDS ──────────────────────────────────────── */
+    .cards-grid { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 36px; }
+    .card-chip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 18px;
+      transition: border-color .18s, box-shadow .18s;
+    }
+    .card-chip:hover { border-color: var(--border-hi); box-shadow: 0 4px 16px rgba(0,0,10,.4); }
+    .card-chip-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .card-chip-name { font-size: 13px; font-weight: 600; letter-spacing: -.015em; }
+    .card-chip-bank { font-size: 11px; color: var(--t3); letter-spacing: -.01em; }
+
+    /* ─── CTA ─────────────────────────────────────────────── */
+    #cta { text-align: center; padding: 100px 40px; }
+    .cta-card {
+      max-width: 700px;
+      margin: 0 auto;
+      background: linear-gradient(135deg, rgba(79,142,247,.1), rgba(124,92,252,.07));
+      border: 1px solid rgba(79,142,247,.22);
+      border-radius: 28px;
+      padding: 64px 56px;
+      position: relative;
+      overflow: hidden;
+    }
+    .cta-card::before {
+      content: '';
+      position: absolute;
+      top: -80px; left: 50%;
+      transform: translateX(-50%);
+      width: 360px; height: 240px;
+      background: radial-gradient(ellipse, rgba(79,142,247,.12), transparent 70%);
+      pointer-events: none;
+    }
+    .cta-title {
+      font-family: var(--fh);
+      font-size: clamp(24px, 3vw, 36px);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      margin-bottom: 14px;
+      position: relative;
+    }
+    .cta-sub { font-size: 15.5px; color: var(--t2); margin-bottom: 32px; line-height: 1.7; letter-spacing: -.015em; position: relative; }
+    .cta-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; position: relative; }
+
+    /* ─── FOOTER ──────────────────────────────────────────── */
+    footer { border-top: 1px solid var(--border); padding: 24px 40px; }
+    .footer-inner { max-width: 1140px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; }
+    .footer-copy { font-size: 12px; color: var(--t3); letter-spacing: -.01em; }
+    .footer-note { font-size: 12px; color: var(--t3); letter-spacing: -.01em; }
+    .footer-note span { color: var(--blue); }
+
+    /* ─── SCROLL FADE ─────────────────────────────────────── */
+    .fade-up { opacity: 0; transform: translateY(18px); transition: opacity .5s ease, transform .5s ease; }
+    .fade-up.visible { opacity: 1; transform: none; }
+    .delay-1 { transition-delay: .09s; }
+    .delay-2 { transition-delay: .18s; }
+    .delay-3 { transition-delay: .28s; }
+
+    /* ─── RESPONSIVE ──────────────────────────────────────── */
+    @media (max-width: 960px) {
+      .hero-inner { grid-template-columns: 1fr; }
+      .mock-wrap { display: none; }
+      .steps-grid { grid-template-columns: 1fr; gap: 14px; }
+      .demo-grid { grid-template-columns: 1fr; }
+      .tech-grid { grid-template-columns: repeat(2, 1fr); }
+      section { padding: 64px 0; }
+      .wrap { padding: 0 24px; }
+    }
+    @media (max-width: 640px) {
+      .hero-title { font-size: 34px; }
+      .hero-inner { padding: 0 20px; }
+      .platforms-inner { flex-wrap: wrap; gap: 12px; padding: 0 20px; }
+      .demo-inner { padding: 56px 20px; }
+      .tech-grid { grid-template-columns: 1fr; }
+      #cta { padding: 64px 20px; }
+      .cta-card { padding: 40px 24px; }
+      footer { padding: 20px; }
+    }
+  </style>
+</head>
+<body class="grid-bg">
+
+  <!-- ─── NAV ─── -->
+  <nav>
+    <div class="nav-inner">
+      <a href="#" class="logo">
+        <div class="logo-mark">FW</div>
+        Fare<b>Wise</b>
+      </a>
+      <div class="nav-links">
+        <a href="#how">How it works</a>
+        <a href="#demo">Try Demo</a>
+        <a href="#tech">Technology</a>
+      </div>
+      <div class="nav-cta">
+        <a href="#" class="btn btn-primary">⚡ Add to Chrome — Free</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ─── HERO ─── -->
+  <section id="hero">
+    <div class="hero-orb-l"></div>
+    <div class="hero-orb-r"></div>
+    <div class="hero-inner">
+
+      <!-- Left: Copy -->
+      <div class="hero-copy">
+        <div class="hero-badge h-in">
+          <div class="badge">
+            <div class="badge-dot"></div>
+            Powered by Amazon Nova AI
+          </div>
+        </div>
+
+        <h1 class="hero-title h-in d1">
+          Stop guessing.<br>
+          See the <span class="t-blue">real price</span><br>
+          with your <span class="t-gold">card offer.</span>
+        </h1>
+
+        <p class="hero-sub h-in d2">
+          FareWise searches Amazon, Flipkart, MakeMyTrip, Goibibo &amp; Cleartrip simultaneously — then calculates your exact price after HDFC, SBI, Axis or ICICI cashback.
+        </p>
+
+        <div class="hero-ctas h-in d3">
+          <a href="#" class="btn btn-primary">⚡ Add to Chrome — Free</a>
+          <a href="#demo" class="btn btn-ghost">See it in action →</a>
+        </div>
+
+        <div class="hero-stats h-in d3">
+          <div class="stat">
+            <div class="stat-val">₹5,748</div>
+            <div class="stat-label">Avg. savings per search</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val">45s</div>
+            <div class="stat-label">Full search time</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val">5</div>
+            <div class="stat-label">Platforms searched</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Extension Mock -->
+      <div class="mock-wrap h-in d2">
+        <div class="mock-panel">
+          <div class="mock-header">
+            <div class="mock-logo">Fare<b>Wise</b></div>
+            <div class="mock-tabs">
+              <div class="mock-tab active">📦 Products</div>
+              <div class="mock-tab">✈️ Travel</div>
+            </div>
+            <div style="font-size:13px;color:var(--t3)">⚙</div>
+          </div>
+          <div class="mock-body">
+            <div class="mock-identified">
+              <div class="mock-conf-dot"></div>
+              <div>
+                <div class="mock-prod-name">Sony WH-1000XM5 Headphones</div>
+                <div class="mock-conf-label">✓ 96% confidence · Nova Lite</div>
+              </div>
+            </div>
+            <div class="mock-savings">
+              <div class="mock-savings-label">Total savings found</div>
+              <div class="mock-savings-val" id="counter-val">₹0</div>
+            </div>
+            <div class="mock-result winner">
+              <div class="mock-result-top">
+                <div class="mock-platform">
+                  <div class="mock-dot" style="background:var(--amazon)"></div>
+                  Amazon India
+                </div>
+                <div class="mock-best">★ BEST</div>
+              </div>
+              <div class="mock-price">₹21,242</div>
+              <div class="mock-price-detail">₹24,990 − 15% HDFC − ₹0 delivery</div>
+              <button class="mock-buy-btn">Buy on Amazon →</button>
+            </div>
+            <div class="mock-result">
+              <div class="mock-result-top">
+                <div class="mock-platform">
+                  <div class="mock-dot" style="background:var(--flipkart)"></div>
+                  Flipkart
+                </div>
+              </div>
+              <div class="mock-price" style="font-size:18px;color:var(--t2)">₹22,991</div>
+              <div class="mock-price-detail">₹26,490 − 13% Axis − ₹0 delivery</div>
+            </div>
+            <div class="mock-status">
+              <div class="status-dot-live"></div>
+              Ready · Nova Act
+            </div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--t3);text-align:center;letter-spacing:.01em">Chrome Extension · Side Panel · 380px</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ─── PLATFORMS STRIP ─── -->
+  <div id="platforms">
+    <div class="platforms-inner">
+      <span class="platforms-label">Searches instantly across</span>
+      <div class="platforms-divider"></div>
+      <div class="platforms-list">
+        <div class="platform-chip"><div class="chip-dot" style="background:var(--amazon)"></div>Amazon India</div>
+        <div class="platform-chip"><div class="chip-dot" style="background:var(--flipkart)"></div>Flipkart</div>
+        <div class="platform-chip"><div class="chip-dot" style="background:var(--mmt)"></div>MakeMyTrip</div>
+        <div class="platform-chip"><div class="chip-dot" style="background:var(--goibibo)"></div>Goibibo</div>
+        <div class="platform-chip"><div class="chip-dot" style="background:var(--cleartrip)"></div>Cleartrip</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── HOW IT WORKS ─── -->
+  <section id="how">
+    <div class="wrap">
+      <div class="section-top fade-up">
+        <div class="label-tag">How it works</div>
+        <h2 class="shead">Intelligence in three steps.</h2>
+        <p class="section-sub">Works for gadgets and flights. Paste a screenshot, type a query, or just speak.</p>
+      </div>
+
+      <div class="mode-tabs">
+        <button class="mode-tab-btn active" onclick="switchHow('products', this)">📦 Products</button>
+        <button class="mode-tab-btn" onclick="switchHow('travel', this)">✈️ Travel</button>
+      </div>
+
+      <div id="how-products" class="steps-grid">
+        <div class="step-card fade-up">
+          <div class="step-num">Step 1</div>
+          <div class="step-icon">📋</div>
+          <div class="step-title">Paste your WhatsApp screenshot</div>
+          <div class="step-desc">Got a deal forwarded on WhatsApp? Paste the listing screenshot — or type the product name. Nova Lite reads the text and identifies the exact model with 96%+ accuracy.</div>
+        </div>
+        <div class="step-card fade-up delay-1">
+          <div class="step-num">Step 2</div>
+          <div class="step-icon">⚡</div>
+          <div class="step-title">AI searches Amazon &amp; Flipkart</div>
+          <div class="step-desc">Two Nova Act agents search Amazon.in and Flipkart simultaneously — in parallel, not one after the other. Live prices, card offers, coupon codes and delivery costs, all in ~30 seconds.</div>
+        </div>
+        <div class="step-card fade-up delay-2">
+          <div class="step-num">Step 3</div>
+          <div class="step-icon">🏆</div>
+          <div class="step-title">Voice announces the winner</div>
+          <div class="step-desc">Nova Sonic tells you the true cheapest price after your card offer is applied. Tap once to buy — FareWise opens the exact product page with the price locked in.</div>
+        </div>
+      </div>
+
+      <div id="how-travel" class="steps-grid" style="display:none">
+        <div class="step-card fade-up">
+          <div class="step-num">Step 1</div>
+          <div class="step-icon">🎤</div>
+          <div class="step-title">Speak or type your route</div>
+          <div class="step-desc">Just say "Mumbai to Delhi this Friday" — Nova Sonic parses the route, date, and class. Or fill the form manually. No OTA account login needed.</div>
+        </div>
+        <div class="step-card fade-up delay-1">
+          <div class="step-num">Step 2</div>
+          <div class="step-icon">✈️</div>
+          <div class="step-title">3 OTAs searched in parallel</div>
+          <div class="step-desc">Nova Act agents hit MakeMyTrip, Goibibo and Cleartrip simultaneously — extracting real fares including all taxes, not just headline prices. Done in ~35 seconds.</div>
+        </div>
+        <div class="step-card fade-up delay-2">
+          <div class="step-num">Step 3</div>
+          <div class="step-icon">💳</div>
+          <div class="step-title">Card discount applied</div>
+          <div class="step-desc">Nova Pro calculates the effective fare for each platform × card combination — instant discounts, cashback, promo codes — and announces the cheapest booking option.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── LIVE DEMO ─── -->
+  <section id="demo" style="background:var(--surface);padding:0">
+    <div class="demo-inner">
+      <div class="section-top fade-up" style="margin-bottom:0">
+        <div class="label-tag">Interactive demo</div>
+        <h2 class="shead">Try it right now.</h2>
+        <p class="section-sub">Type any product or flight route below to see FareWise in action.</p>
+      </div>
+
+      <div class="demo-grid">
+        <div class="demo-controls">
+          <div>
+            <div class="mode-tabs" style="margin-bottom:20px;margin-left:0;width:fit-content">
+              <button class="mode-tab-btn active" onclick="switchDemo('products',this)">📦 Products</button>
+              <button class="mode-tab-btn" onclick="switchDemo('travel',this)">✈️ Travel</button>
+            </div>
+          </div>
+
+          <div id="demo-products" class="demo-input-group">
+            <input class="demo-input" id="demo-product-input" placeholder="e.g. Sony WH-1000XM5, Samsung Galaxy S25+" value="Sony WH-1000XM5 Headphones">
+            <select class="demo-input" id="demo-card-select">
+              <option value="hdfc">HDFC Regalia (15% cashback on Amazon)</option>
+              <option value="sbi">SBI SimplyCLICK (5% cashback on Amazon)</option>
+              <option value="axis">Axis Flipkart (5% on Flipkart)</option>
+              <option value="icici">Amazon Pay ICICI (5% Prime cashback)</option>
+            </select>
+            <button class="demo-btn" onclick="runDemo('products')">
+              <span id="demo-btn-products-txt">⚡ Find Best Price</span>
+            </button>
+          </div>
+
+          <div id="demo-travel" class="demo-input-group" style="display:none">
+            <input class="demo-input" id="demo-from" placeholder="From city (e.g. Mumbai)" value="Mumbai">
+            <input class="demo-input" id="demo-to" placeholder="To city (e.g. Delhi)" value="Delhi">
+            <input class="demo-input" id="demo-date" type="date" value="2026-03-15">
+            <select class="demo-input">
+              <option>Economy</option>
+              <option>Business</option>
+            </select>
+            <button class="demo-btn" onclick="runDemo('travel')">
+              <span id="demo-btn-travel-txt">✈️ Find Cheapest Flight</span>
+            </button>
+          </div>
+
+          <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:6px" id="nova-models-used">
+            <div class="badge" style="font-size:10px;padding:3px 10px">Nova Lite · Product ID</div>
+            <div class="badge" style="font-size:10px;padding:3px 10px">Nova Act × 2 · Search</div>
+            <div class="badge" style="font-size:10px;padding:3px 10px">Nova Pro · Pricing</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="demo-cards-label" id="demo-results-label">Results</div>
+          <div class="demo-card-grid" id="demo-results">
+            <div style="background:var(--bg);border:1px dashed var(--border);border-radius:14px;padding:32px;text-align:center;color:var(--t3);font-size:13px">
+              Click "Find Best Price" to see a demo search
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── NOVA TECHNOLOGY ─── -->
+  <section id="tech">
+    <div class="wrap">
+      <div class="section-top fade-up">
+        <div class="label-tag">Powered by Amazon Nova</div>
+        <h2 class="shead">Five Nova models. One decision.</h2>
+        <p class="section-sub">Every search chains five specialised Amazon Nova models in sequence — each handling what it does best.</p>
+      </div>
+      <div class="tech-grid fade-up">
+        <div class="tech-card">
+          <div class="tech-icon" style="background:rgba(79,142,247,.12)">👁</div>
+          <div class="tech-name">Nova Lite</div>
+          <div class="tech-role">Product Identifier</div>
+          <div class="tech-desc">Reads text labels from WhatsApp screenshots to extract exact model number, brand and variant — no pre-built catalog needed. 96%+ accuracy on listing images.</div>
+        </div>
+        <div class="tech-card">
+          <div class="tech-icon" style="background:rgba(124,92,252,.12)">🔗</div>
+          <div class="tech-name">Nova Multimodal</div>
+          <div class="tech-role">SKU Validator</div>
+          <div class="tech-desc">Embeds your product image and search result thumbnails into a shared vector space. Cosine similarity confirms the right product is being priced — not a lookalike.</div>
+        </div>
+        <div class="tech-card">
+          <div class="tech-icon" style="background:rgba(34,212,122,.10)">🌐</div>
+          <div class="tech-name">Nova Act</div>
+          <div class="tech-role">Web Agents (×2–3, parallel)</div>
+          <div class="tech-desc">Autonomous browser agents that navigate Amazon, Flipkart, MakeMyTrip, Goibibo and Cleartrip simultaneously — server-side, no extra permissions needed on OTA sites.</div>
+        </div>
+        <div class="tech-card">
+          <div class="tech-icon" style="background:rgba(245,166,35,.10)">🧮</div>
+          <div class="tech-name">Nova Pro</div>
+          <div class="tech-role">Price Reasoner</div>
+          <div class="tech-desc">Multi-variable reasoning across platform price × card cashback × EMI discount × reward points × delivery cost to find the true effective price — in plain language.</div>
+        </div>
+        <div class="tech-card" style="grid-column:span 2">
+          <div class="tech-icon" style="background:rgba(79,142,247,.10)">🎙</div>
+          <div class="tech-name">Nova Sonic</div>
+          <div class="tech-role">Voice Interface (bidirectional)</div>
+          <div class="tech-desc">Parses spoken routes ("Mumbai to Delhi, this Friday, economy") and announces the winner with barge-in support — so you can ask a follow-up before it finishes speaking. Works in Indian English with ₹ pronunciation.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── BANK CARDS ─── -->
+  <section id="cards" style="background:var(--surface);padding:60px 0">
+    <div class="wrap">
+      <div class="section-top fade-up">
+        <div class="label-tag">Card Offers</div>
+        <h2 class="shead" style="font-size:clamp(22px,2.5vw,30px)">Your card. Applied automatically.</h2>
+        <p class="section-sub">FareWise knows the exact cashback rate, EMI discount, and reward point value for India's top bank cards — and calculates the true price before you even open the platform.</p>
+      </div>
+      <div class="cards-grid fade-up">
+        <div class="card-chip"><div class="card-chip-dot" style="background:#0070BA"></div><div><div class="card-chip-name">HDFC Regalia</div><div class="card-chip-bank">HDFC Bank · Visa</div></div></div>
+        <div class="card-chip"><div class="card-chip-dot" style="background:#1A237E"></div><div><div class="card-chip-name">SBI SimplyCLICK</div><div class="card-chip-bank">SBI · Visa</div></div></div>
+        <div class="card-chip"><div class="card-chip-dot" style="background:#97144D"></div><div><div class="card-chip-name">Axis Flipkart</div><div class="card-chip-bank">Axis Bank · Visa</div></div></div>
+        <div class="card-chip"><div class="card-chip-dot" style="background:#FF9900"></div><div><div class="card-chip-name">Amazon Pay ICICI</div><div class="card-chip-bank">ICICI Bank · Visa</div></div></div>
+        <div class="card-chip"><div class="card-chip-dot" style="background:#ED1C24"></div><div><div class="card-chip-name">Kotak Essentia</div><div class="card-chip-bank">Kotak Mahindra · Visa</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FOOTER CTA ─── -->
+  <section id="cta">
+    <div class="cta-card fade-up">
+      <div class="label-tag" style="margin-bottom:14px">Start saving today</div>
+      <h2 class="cta-title">The real price is one click away.</h2>
+      <p class="cta-sub">Free Chrome Extension. No account needed. Works on any product listing or flight search — in under 45 seconds.</p>
+      <div class="cta-btns">
+        <a href="#" class="btn btn-primary" style="font-size:15px;padding:12px 28px">⚡ Add to Chrome — Free</a>
+        <a href="#demo" class="btn btn-ghost" style="font-size:15px;padding:12px 28px">Try Web Demo →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FOOTER ─── -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-copy">© 2026 FareWise · Built for the Amazon Nova AI Hackathon</div>
+      <div class="footer-note">Powered by <span>Amazon Nova</span> · Anthropic Claude</div>
+    </div>
+  </footer>
+
+  <script>
+    /* ── Scroll fade-up ────────────────────────────────── */
+    const observer = new IntersectionObserver(
+      entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }),
+      { threshold: 0.1 }
+    );
+    document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+
+    /* ── Savings counter ───────────────────────────────── */
+    const el = document.getElementById('counter-val');
+    let val = 0, target = 5748, started = false;
+    const start = () => {
+      if (started) return; started = true;
+      const step = () => {
+        val += Math.ceil((target - val) / 12);
+        el.textContent = '₹' + val.toLocaleString('en-IN');
+        if (val < target) requestAnimationFrame(step);
+        else el.textContent = '₹5,748';
+      };
+      step();
+    };
+    new IntersectionObserver(([e]) => { if (e.isIntersecting) start(); }).observe(el);
+
+    /* ── How-it-works tab switcher ─────────────────────── */
+    function switchHow(mode, btn) {
+      document.querySelectorAll('#how .mode-tabs .mode-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('how-products').style.display = mode === 'products' ? 'grid' : 'none';
+      document.getElementById('how-travel').style.display   = mode === 'travel'   ? 'grid' : 'none';
+    }
+
+    /* ── Demo tab switcher ─────────────────────────────── */
+    function switchDemo(mode, btn) {
+      btn.closest('.mode-tabs').querySelectorAll('.mode-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('demo-products').style.display = mode === 'products' ? 'flex' : 'none';
+      document.getElementById('demo-travel').style.display   = mode === 'travel'   ? 'flex' : 'none';
+
+      const models = document.getElementById('nova-models-used');
+      if (mode === 'products') {
+        models.innerHTML = `
+          <div class="badge" style="font-size:10px;padding:3px 10px">Nova Lite · Product ID</div>
+          <div class="badge" style="font-size:10px;padding:3px 10px">Nova Act × 2 · Search</div>
+          <div class="badge" style="font-size:10px;padding:3px 10px">Nova Pro · Pricing</div>`;
+      } else {
+        models.innerHTML = `
+          <div class="badge" style="font-size:10px;padding:3px 10px">Nova Sonic · Route Parse</div>
+          <div class="badge" style="font-size:10px;padding:3px 10px">Nova Act × 3 · Search</div>
+          <div class="badge" style="font-size:10px;padding:3px 10px">Nova Pro · Fare Calc</div>`;
+      }
+
+      document.getElementById('demo-results').innerHTML = `<div style="background:var(--bg);border:1px dashed var(--border);border-radius:14px;padding:32px;text-align:center;color:var(--t3);font-size:13px">Click the search button to see a demo result</div>`;
+      document.getElementById('demo-results-label').textContent = 'Results';
+    }
+
+    /* ── Demo simulation ───────────────────────────────── */
+    const PRODUCT_DEMOS = {
+      default: {
+        product: 'Sony WH-1000XM5 Headphones',
+        results: [
+          { platform:'Amazon India', color:'#FF9900', price:'₹21,242', raw:'₹24,990', detail:'− 15% HDFC − ₹0 delivery', saving:'You save ₹3,748 vs store price', winner:true, url:'#' },
+          { platform:'Flipkart',     color:'#2874F0', price:'₹22,991', raw:'₹26,490', detail:'− 13% Axis − ₹0 delivery', saving:'You save ₹2,000 vs store price', winner:false, url:'#' },
+        ],
+        reasoning: 'Amazon India wins after applying your <b>HDFC Regalia 15% cashback</b> — ₹1,749 cheaper than Flipkart even after Axis card discount.'
+      }
+    };
+    const TRAVEL_DEMOS = {
+      default: {
+        route: 'Mumbai → Delhi · 15 Mar · Economy · 1 Adult',
+        results: [
+          { platform:'MakeMyTrip', color:'#D42B2B', price:'₹4,201', raw:'₹5,200', detail:'IndiGo 6E-2234 · 07:10→09:25 · 2h 15m · Non-stop · − SBI 19%', saving:'Save ₹999 with SBI SimplyCLICK', winner:true },
+          { platform:'Goibibo',    color:'#E8390E', price:'₹4,450', raw:'₹5,100', detail:'IndiGo 6E-2234 · 07:10→09:25 · 2h 15m · Non-stop · − Axis 13%', saving:'Save ₹650 with Axis Flipkart', winner:false },
+          { platform:'Cleartrip',  color:'#E87722', price:'₹4,690', raw:'₹4,890', detail:'Air India AI-805 · 08:00→10:20 · 2h 20m · Non-stop · − HDFC 4%', saving:'Save ₹200 with HDFC Regalia', winner:false },
+        ],
+        reasoning: 'MakeMyTrip wins after <b>SBI SimplyCLICK 19% flight cashback</b> — ₹249 cheaper than Goibibo\'s Axis offer.'
+      }
+    };
+
+    function runDemo(mode) {
+      const btnTxt = document.getElementById(`demo-btn-${mode}-txt`);
+      const label  = document.getElementById('demo-results-label');
+      const box    = document.getElementById('demo-results');
+
+      btnTxt.textContent = mode === 'products' ? '⟳ Searching...' : '⟳ Searching flights...';
+
+      const platforms = mode === 'products'
+        ? ['Amazon India', 'Flipkart']
+        : ['MakeMyTrip', 'Goibibo', 'Cleartrip'];
+
+      box.innerHTML = platforms.map(p => `
+        <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+          <div style="font-size:12px;font-weight:600;color:var(--t2);width:90px;flex-shrink:0;letter-spacing:-.015em">${p}</div>
+          <div style="flex:1;height:4px;background:var(--raised);border-radius:999px;overflow:hidden">
+            <div class="prog-bar" style="height:100%;border-radius:999px;background:var(--blue);width:0;transition:width ${.8+Math.random()*.8}s ease"></div>
+          </div>
+          <div style="font-size:11px;color:var(--t3)">searching…</div>
+        </div>`).join('');
+
+      setTimeout(() => document.querySelectorAll('.prog-bar').forEach(b => b.style.width = '100%'), 80);
+
+      setTimeout(() => {
+        btnTxt.textContent = mode === 'products' ? '⚡ Find Best Price' : '✈️ Find Cheapest Flight';
+        const data = mode === 'products' ? PRODUCT_DEMOS.default : TRAVEL_DEMOS.default;
+
+        label.textContent = mode === 'products'
+          ? `Results for "${data.product}"`
+          : `Flights for ${data.route}`;
+
+        box.innerHTML = data.results.map(r => `
+          <div class="demo-result-card ${r.winner ? 'winner-card' : ''}">
+            <div class="demo-card-top">
+              <div class="demo-platform-name">
+                <div class="dpc" style="background:${r.color}"></div>
+                ${r.platform}
+              </div>
+              ${r.winner ? '<div class="winner-badge">★ Best Deal</div>' : ''}
+            </div>
+            <div class="demo-price">${r.price}</div>
+            <div class="demo-price-detail">${r.detail}</div>
+            <div class="demo-saving">↓ ${r.saving}</div>
+          </div>`).join('')
+          + `<div class="demo-summary">💡 <b>Nova Pro says:</b> ${data.reasoning}</div>`;
+      }, 2200);
+    }
+  </script>
+</body>
+</html>

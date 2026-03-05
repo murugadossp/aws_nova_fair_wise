@@ -1,0 +1,5 @@
+# Local env with secrets — do not commit
+.env
+
+# Agent test log files
+logs/
