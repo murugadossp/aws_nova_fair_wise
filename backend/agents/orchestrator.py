@@ -1,7 +1,11 @@
 """
 FareWise — Agent Orchestrator
-Runs Nova Act agents in parallel, streams progress over WebSocket,
-then calls Nova Pro reasoner for the final winner selection.
+
+Products pipeline:  Identifier → Validator → [Amazon ‖ Flipkart] → Reasoner
+Travel pipeline:    Planner → [MMT ‖ Cleartrip ‖ Ixigo] → Normalizer → Reasoner
+
+All Nova Act agents are synchronous (blocking), so they run inside a
+shared ThreadPoolExecutor and are awaited via run_in_executor.
 """
 
 import asyncio
@@ -18,23 +22,34 @@ from logger import get_logger
 from agents.amazon import AmazonAgent
 from agents.flipkart import FlipkartAgent
 from agents.makemytrip import MakeMyTripAgent
-from agents.goibibo import GoibiboAgent
 from agents.cleartrip import CleartripAgent
+from agents.ixigo import IxigoAgent
 from nova.identifier import NovaIdentifier
 from nova.validator import NovaValidator
 from nova.reasoner import NovaReasoner
+from nova.planner import TravelPlanner
+from nova.flight_normalizer import FlightNormalizer
 
 log = get_logger(__name__)
 
-# Shared thread pool for Nova Act (synchronous browser agents)
-_executor = ThreadPoolExecutor(max_workers=5)
+# Shared thread pool — one worker per Nova Act agent (each opens its own browser)
+_executor = ThreadPoolExecutor(max_workers=6)
+
+# Registry of available travel agents; planner selects a subset per query
+_TRAVEL_AGENTS: dict[str, type] = {
+    "makemytrip": MakeMyTripAgent,
+    "cleartrip":  CleartripAgent,
+    "ixigo":      IxigoAgent,
+}
 
 
 async def _run_in_thread(fn, *args, **kwargs):
-    """Run a synchronous Nova Act agent in the thread pool."""
+    """Run a synchronous Nova Act agent call in the shared thread pool."""
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(_executor, lambda: fn(*args, **kwargs))
 
+
+# ── Product Orchestrator ──────────────────────────────────────────────────────
 
 class ProductOrchestrator:
     """
@@ -54,7 +69,6 @@ class ProductOrchestrator:
         self.reasoner   = NovaReasoner()
 
     async def _send(self, msg: dict):
-        """Stream a message to the connected client."""
         await self.ws.send_json(msg)
 
     async def run(self, query: str, image_b64: Optional[str], cards: list[str]):
@@ -67,7 +81,6 @@ class ProductOrchestrator:
 
             if image_b64:
                 product_info = await self.identifier.identify_from_image(image_b64)
-                # Embed reference image for later validation
                 await self.validator.set_reference_image(image_b64)
             else:
                 product_info = await self.identifier.identify_from_text(query)
@@ -112,7 +125,6 @@ class ProductOrchestrator:
                 return_exceptions=True,
             )
 
-            # Collect raw results (handle exceptions gracefully)
             all_results = []
             if isinstance(amazon_results, list):
                 all_results.extend(amazon_results)
@@ -129,7 +141,7 @@ class ProductOrchestrator:
                 await self._send({"type": "error", "message": "No results found on Amazon or Flipkart."})
                 return
 
-            # ── Step 3: Validate with Nova Multimodal (only if we had an image) ──
+            # ── Step 3: Validate with Nova Multimodal (only if image provided) ─
             if image_b64 and self.validator._user_image_vec is not None:
                 await self._send({"type": "progress", "step": "validating",
                                    "message": "Validating product match with Nova Multimodal…"})
@@ -145,7 +157,6 @@ class ProductOrchestrator:
                 product_name=product_name,
             )
 
-            # ── Step 5: Send final results ────────────────────────────────────
             await self._send({
                 "type":       "results",
                 "product":    product_info,
@@ -162,111 +173,157 @@ class ProductOrchestrator:
             await self._send({"type": "error", "message": f"Search failed: {str(e)}"})
 
 
+# ── Travel Orchestrator ───────────────────────────────────────────────────────
+
 class TravelOrchestrator:
     """
     Coordinates flight price comparison:
-    1. MMT + Goibibo + Cleartrip Nova Act agents run in parallel
-    2. Nova Pro selects the winner with card offers applied
+
+    1. TravelPlanner   (Nova Lite) — parse query, select agents, extract criteria
+    2. Selected agents (Nova Act)  — run in parallel; default: MMT + Cleartrip + Ixigo
+    3. FlightNormalizer (Python)   — deduplicate, unify schema, apply criteria filter
+    4. NovaReasoner    (Nova Pro)  — apply card offers, pick winner, explain
+
+    Adding a new OTA agent: register it in _TRAVEL_AGENTS above. The planner
+    will automatically be able to select it once the name is in its prompt.
     """
 
     def __init__(self, ws: WebSocket):
-        self.ws       = ws
-        self.reasoner = NovaReasoner()
+        self.ws         = ws
+        self.planner    = TravelPlanner()
+        self.normalizer = FlightNormalizer()
+        self.reasoner   = NovaReasoner()
 
     async def _send(self, msg: dict):
         await self.ws.send_json(msg)
 
-    async def run(self, route: dict, cards: list[str]):
-        from_city    = route.get("from", "")
-        to_city      = route.get("to", "")
-        date         = route.get("date", "")
-        travel_class = route.get("class", "economy")
-        user_prompt  = route.get("user_prompt") or route.get("criteria")  # e.g. "morning flights 6am–12pm"
-        log.info("TravelOrchestrator.run: %s→%s date=%s class=%s user_prompt=%s cards=%s",
-                 from_city, to_city, date, travel_class, user_prompt, cards)
+    async def _run_agent(
+        self,
+        name: str,
+        agent,
+        from_city: str,
+        to_city: str,
+        date: str,
+        travel_class: str,
+        filters: Optional[dict],
+    ) -> list[dict]:
+        """Run one travel agent in the thread pool, stream start/done events."""
+        await self._send({"type": "agent_start", "agent": name})
         try:
+            result = await _run_in_thread(
+                agent.search,
+                from_city, to_city, date, travel_class,
+                filters,
+            )
+            # Cleartrip can return list (extraction only) or dict with "flights" (extraction + offers).
+            if isinstance(result, dict) and "flights" in result:
+                flights = result["flights"]
+            else:
+                flights = result if isinstance(result, list) else []
+            await self._send({"type": "agent_done", "agent": name, "count": len(flights)})
+            return flights
+        except Exception as e:
+            log.error("%s agent raised exception: %s", name, e)
+            await self._send({"type": "agent_done", "agent": name, "count": 0, "error": str(e)})
+            return []
 
-            await self._send({"type": "progress", "step": "searching",
-                               "message": f"Searching {from_city} → {to_city} across 3 platforms…"})
-            log.info("Starting parallel flight search: MMT + Goibibo + Cleartrip")
+    async def run(
+        self,
+        route: dict,
+        cards: list[str],
+        query: Optional[str] = None,
+    ):
+        log.info(
+            "TravelOrchestrator.run: route=%s query=%s cards=%s",
+            {k: route.get(k) for k in ("from", "to", "date", "class")},
+            query,
+            cards,
+        )
+        try:
+            # ── Step 1: Planner — parse query, select agents, extract filters ──
+            await self._send({"type": "progress", "step": "planning",
+                               "message": "Planning your search with Nova Lite…"})
 
-            mmt_agent       = MakeMyTripAgent()
-            goibibo_agent   = GoibiboAgent()
-            cleartrip_agent = CleartripAgent()
+            plan = await self.planner.plan(query=query, route=route)
 
-            async def run_mmt():
-                await self._send({"type": "agent_start", "agent": "makemytrip"})
-                result = await _run_in_thread(
-                    mmt_agent.search,
-                    from_city, to_city, date, travel_class,
-                    **({"user_prompt": user_prompt} if user_prompt else {}),
-                )
-                await self._send({"type": "agent_done", "agent": "makemytrip", "count": len(result)})
-                return result
+            r            = plan["route"]
+            from_city    = r["from"]  or route.get("from", "")
+            to_city      = r["to"]    or route.get("to", "")
+            date         = r["date"]  or route.get("date", "")
+            travel_class = r["class"] or route.get("class", "economy")
+            filters      = plan.get("filters") or {}
+            agent_names  = [n for n in plan["agents"] if n in _TRAVEL_AGENTS]
 
-            async def run_goibibo():
-                await self._send({"type": "agent_start", "agent": "goibibo"})
-                result = await _run_in_thread(
-                    goibibo_agent.search,
-                    from_city, to_city, date, travel_class,
-                    **({"user_prompt": user_prompt} if user_prompt else {}),
-                )
-                await self._send({"type": "agent_done", "agent": "goibibo", "count": len(result)})
-                return result
-
-            async def run_cleartrip():
-                await self._send({"type": "agent_start", "agent": "cleartrip"})
-                result = await _run_in_thread(
-                    cleartrip_agent.search,
-                    from_city, to_city, date, travel_class,
-                    **({"user_prompt": user_prompt} if user_prompt else {}),
-                )
-                count = len(result["flights"]) if isinstance(result, dict) and "flights" in result else len(result)
-                await self._send({"type": "agent_done", "agent": "cleartrip", "count": count})
-                return result
-
-            mmt_results, goibibo_results, cleartrip_results = await asyncio.gather(
-                run_mmt(), run_goibibo(), run_cleartrip(),
-                return_exceptions=True,
+            log.info(
+                "Plan: %s→%s date=%s class=%s agents=%s filters=%s",
+                from_city, to_city, date, travel_class, agent_names, filters,
             )
 
-            all_flights = []
-            cleartrip_offers = None
-            for name, r in [("makemytrip", mmt_results), ("goibibo", goibibo_results), ("cleartrip", cleartrip_results)]:
-                if isinstance(r, list):
-                    all_flights.extend(r)
-                elif isinstance(r, dict) and "flights" in r:
-                    all_flights.extend(r["flights"])
-                    if name == "cleartrip" and (r.get("offers_analysis") or r.get("suggestion")):
-                        cleartrip_offers = {"offers_analysis": r.get("offers_analysis", []), "suggestion": r.get("suggestion", "")}
-                elif isinstance(r, Exception):
-                    log.error("%s agent raised exception: %s", name, r)
+            await self._send({
+                "type":    "plan",
+                "route":   {"from": from_city, "to": to_city, "date": date, "class": travel_class},
+                "agents":  agent_names,
+                "filters": filters,
+            })
 
-            log.info("Combined flight results: %d total from 3 platforms", len(all_flights))
+            # ── Step 2: Run selected agents in parallel ───────────────────────
+            n = len(agent_names)
+            await self._send({
+                "type":    "progress",
+                "step":    "searching",
+                "message": f"Searching {from_city} → {to_city} across {n} platform{'s' if n != 1 else ''}…",
+            })
 
-            if not all_flights:
+            coros = [
+                self._run_agent(
+                    name, _TRAVEL_AGENTS[name](),
+                    from_city, to_city, date, travel_class, filters,
+                )
+                for name in agent_names
+            ]
+            gathered = await asyncio.gather(*coros, return_exceptions=True)
+
+            # Flatten results; exceptions already logged inside _run_agent
+            raw_flights: list[dict] = []
+            for item in gathered:
+                if isinstance(item, list):
+                    raw_flights.extend(item)
+                elif isinstance(item, Exception):
+                    log.error("Unexpected exception in gathered results: %s", item)
+
+            log.info("Gathered %d raw flights from %d agents", len(raw_flights), n)
+
+            if not raw_flights:
                 await self._send({"type": "error", "message": "No flights found for this route and date."})
                 return
 
-            await self._send({"type": "progress", "step": "reasoning",
+            # ── Step 3: Normalize — dedup, unify schema, apply filters ────────
+            await self._send({"type": "progress", "step": "normalizing",
+                               "message": "Deduplicating and normalising flight data…"})
+
+            flights = self.normalizer.normalize(raw_flights, filters=filters)
+
+            if not flights:
+                await self._send({"type": "error",
+                                   "message": "No flights matched your criteria. Try broadening your search."})
+                return
+
+            # ── Step 4: Rank — Nova Pro applies card offers, picks winner ─────
+            await self._send({"type": "progress", "step": "ranking",
                                "message": "Nova Pro calculating best fare with card discounts…"})
 
             deal = await self.reasoner.calculate_best_flight(
-                flights=all_flights,
+                flights=flights,
                 selected_cards=cards,
             )
 
-            payload = {
+            await self._send({
                 "type":      "results",
-                "route":     route,
+                "route":     {"from": from_city, "to": to_city, "date": date, "class": travel_class},
                 "winner":    deal.get("winner"),
-                "all":       deal.get("all_results", all_flights),
+                "all":       deal.get("all_results", flights),
                 "reasoning": deal.get("reasoning"),
-            }
-            if cleartrip_offers:
-                payload["offers_analysis"] = cleartrip_offers.get("offers_analysis", [])
-                payload["suggestion"] = cleartrip_offers.get("suggestion", "")
-            await self._send(payload)
+            })
 
             log.info("TravelOrchestrator completed: winner=%s", deal.get("winner", {}).get("platform"))
             await self._send({"type": "done"})

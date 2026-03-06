@@ -112,11 +112,17 @@ async def _run_product_search(ws: WebSocket, payload: dict):
 
 
 async def _run_travel_search(ws: WebSocket, payload: dict):
-    """Orchestrate MMT + Goibibo + Cleartrip agents in parallel, stream progress."""
+    """Orchestrate travel agents in parallel, stream progress.
+    Payload fields:
+      route: { from, to, date, class }  — structured route (from sidepanel form)
+      query: str                         — optional raw text/voice query (planner parses it)
+      cards: list[str]                   — selected bank card IDs
+    """
     from agents.orchestrator import TravelOrchestrator
 
-    route = payload.get("route", {})   # { from, to, date, class }
+    route = payload.get("route", {})
     cards = payload.get("cards", [])
+    query = payload.get("query")        # optional: raw natural-language input
 
     orchestrator = TravelOrchestrator(ws)
-    await orchestrator.run(route=route, cards=cards)
+    await orchestrator.run(route=route, cards=cards, query=query)

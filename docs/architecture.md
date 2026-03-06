@@ -1,7 +1,7 @@
 # FareWise — Architecture Deep Dive
 > Two-Layer Design · Amazon Nova Model Pipeline · WebSocket Streaming · Three Surfaces
 
-**Version:** 1.1 (updated after full backend implementation)
+**Version:** 1.2 (updated March 2026 — structured filters + TravelPlanner + Ixigo)
 
 ---
 
@@ -86,33 +86,41 @@ Nova Act cannot:
    │  ┌────────────────┐    │   │                                    │
    │  │  Nova Lite     │    │   │  Products Mode (2 agents):         │
    │  │  nova-lite-v1  │    │   │  ┌──────────────────────────────┐  │
-   │  │  Reads text    │    │   │  │ agents/amazon.py             │  │
+   │  │  Reads text    │    │   │  │ agents/amazon/               │  │
    │  │  from image    │    │   │  │ NovaAct → amazon.in          │  │
    │  └────────────────┘    │   │  │ Returns: price, offers, ETA  │  │
    │                        │   │  └──────────────────────────────┘  │
-   │  nova/validator.py     │   │  ┌──────────────────────────────┐  │
-   │  ┌────────────────┐    │   │  │ agents/flipkart.py           │  │
-   │  │  Nova Multi-   │    │   │  │ NovaAct → flipkart.com       │  │
-   │  │  modal Embed.  │    │   │  │ Returns: price, offers, ETA  │  │
-   │  │  Cosine sim.   │    │   │  └──────────────────────────────┘  │
-   │  │  validation    │    │   │                                    │
+   │  nova/planner.py       │   │  ┌──────────────────────────────┐  │
+   │  ┌────────────────┐    │   │  │ agents/flipkart/             │  │
+   │  │  Nova Lite     │    │   │  │ NovaAct → flipkart.com       │  │
+   │  │  nova-lite-v1  │    │   │  │ Returns: price, offers, ETA  │  │
+   │  │  NL query →    │    │   │  └──────────────────────────────┘  │
+   │  │  plan+filters  │    │   │                                    │
    │  └────────────────┘    │   │  Travel Mode (3 agents):           │
    │                        │   │  ┌──────────────────────────────┐  │
-   │  nova/reasoner.py      │   │  │ agents/makemytrip.py         │  │
+   │  nova/validator.py     │   │  │ agents/makemytrip/           │  │
    │  ┌────────────────┐    │   │  │ NovaAct → makemytrip.com     │  │
-   │  │  Nova Pro      │    │   │  └──────────────────────────────┘  │
-   │  │  nova-pro-v1   │    │   │  ┌──────────────────────────────┐  │
-   │  │  Price calc +  │    │   │  │ agents/goibibo.py            │  │
-   │  │  card offers   │    │   │  │ NovaAct → goibibo.com        │  │
+   │  │  Nova Multi-   │    │   │  └──────────────────────────────┘  │
+   │  │  modal Embed.  │    │   │  ┌──────────────────────────────┐  │
+   │  │  Cosine sim.   │    │   │  │ agents/ixigo/                │  │
+   │  │  validation    │    │   │  │ NovaAct → ixigo.com          │  │
    │  └────────────────┘    │   │  └──────────────────────────────┘  │
    │                        │   │  ┌──────────────────────────────┐  │
-   │  routers/voice.py      │   │  │ agents/cleartrip.py          │  │
+   │  nova/reasoner.py      │   │  │ agents/cleartrip/            │  │
    │  ┌────────────────┐    │   │  │ NovaAct → cleartrip.com      │  │
-   │  │  Nova Sonic    │    │   │  └──────────────────────────────┘  │
-   │  │  (via Polly    │    │   │                                    │
-   │  │   for MVP TTS) │    │   │  agents/orchestrator.py            │
-   │  └────────────────┘    │   │  Coordinates parallel execution    │
-   └────────────────────────┘   └────────────────────────────────────┘
+   │  │  Nova Pro      │    │   │  └──────────────────────────────┘  │
+   │  │  nova-pro-v1   │    │   │                                    │
+   │  │  Price calc +  │    │   │  agents/orchestrator.py            │
+   │  │  card offers   │    │   │  nova/flight_normalizer.py         │
+   │  └────────────────┘    │   │  Parallel exec + dedup + filter    │
+   │                        │   └────────────────────────────────────┘
+   │  routers/voice.py      │
+   │  ┌────────────────┐    │
+   │  │  Nova Sonic    │    │
+   │  │  (via Polly    │    │
+   │  │   for MVP TTS) │    │
+   │  └────────────────┘    │
+   └────────────────────────┘
                    │                              │
                    └──────────────┬───────────────┘
                                   │ Both layers feed into
@@ -188,33 +196,124 @@ Step 6: NOVA SONIC ANNOUNCEMENT  [routers/voice.py]
 
 ```
 Step 1: INPUT
-  Voice ("Mumbai to Delhi, this Friday") or text form fields
+  Natural language: "morning flights Bengaluru to Hyderabad next Friday"
+  or structured form fields (city dropdowns, date picker, class selector)
 
-Step 2: VOICE PARSING
-  Client-side: Web Speech API (fast, no round-trip)
-  Server-side: /api/travel/parse-voice (accurate, regex + relative dates)
-  Output: { from_city, to_city, date, travel_class, confidence }
+Step 2: TRAVELPLANNER  [nova/planner.py]
+  Model: us.amazon.nova-lite-v1:0
+  Input: natural language query (skipped if structured fields provided)
+  Does:  - Extracts route (from/to/date/class)
+         - Infers filters (time windows → departure_window, "non-stop" → max_stops=0)
+         - Selects agents (default all three; subset if user names a platform)
+         - Assigns sort_by from intent ("cheapest" → price, "earliest" → departure)
+  Output: structured plan JSON
+  {
+    "route":   { "from": "Bengaluru", "to": "Hyderabad",
+                 "date": "2026-03-13", "class": "economy" },
+    "filters": { "departure_window": ["06:00", "11:59"],
+                 "max_stops": null, "sort_by": "departure" },
+    "agents":  ["makemytrip", "cleartrip", "ixigo"]
+  }
+  Time:  ~1-2 seconds
 
 Step 3: NOVA ACT PARALLEL SEARCH  [agents/orchestrator.py]
   Workers: ThreadPoolExecutor(max_workers=5)
-  Three agents simultaneously:
-  ┌─────────────────────────────────────────────────────┐
-  │  Thread 1: MakeMyTripAgent.search(route)            │
-  │  Thread 2: GoibiboAgent.search(route)               │
-  │  Thread 3: CleartripAgent.search(route)             │
-  └─────────────────────────────────────────────────────┘
+  Three agents simultaneously — each receives route params + filters dict:
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Thread 1: MakeMyTripAgent.search(                             │
+  │    from_city, to_city, date, travel_class, filters=filters)    │
+  │  Thread 2: IxigoAgent.search(...)                              │
+  │  Thread 3: CleartripAgent.search(...)                          │
+  │                                                                 │
+  │  Each agent internally:                                         │
+  │    _filters_to_criteria(filters)                                │
+  │    → "departure between 06:00 and 11:59; sort by departure"    │
+  │    → nova.act(hint, schema={...})                               │
+  └─────────────────────────────────────────────────────────────────┘
   Each streams "agent_done" event as it completes
   Time:  ~45-60 seconds (parallel, not serial)
 
-Step 4: NOVA PRO REASONING  [nova/reasoner.py]
+Step 4: FLIGHTNORMALIZER  [nova/flight_normalizer.py]
+  Pure Python — no model call needed
+  Does:  - Deduplicates same flight appearing on multiple OTAs
+         - Applies structured filters directly (precise, no regex):
+           departure_window → integer HH:MM comparison
+           max_stops        → integer filter (keep if stops <= max_stops)
+           sort_by          → sort by price / departure time / duration
+  Output: clean, deduplicated, filtered, sorted flight list
+
+Step 5: NOVA PRO REASONING  [nova/reasoner.py]
   Same engine as products, adapted for flights
-  Handles: convenience_fee (OTA-specific scam), same flight on multiple OTAs
+  Handles: convenience_fee (OTA-specific markup), same flight on multiple OTAs
+  Input: normalized flight list + user's saved cards + card_offers.json
   Output: { winner, all_results, reasoning }
 
-Step 5: NOVA SONIC ANNOUNCEMENT
-  "Goibibo wins. IndiGo 6E-861 at ₹4,201 with your SBI card.
+Step 6: NOVA SONIC ANNOUNCEMENT
+  "Cleartrip wins. IndiGo 6E-204 at ₹4,201 with your HDFC card.
    That's ₹1,890 less than MakeMyTrip."
 ```
+
+---
+
+## Travel Mode — Structured Data Flow
+
+This diagram shows how a natural language query flows through the entire pipeline. The key insight is that `filters` is a **structured dict** (not a free-text string) — the planner extracts it once and it flows unchanged through orchestrator → agents → normalizer.
+
+```
+User: "morning flights Bengaluru to Hyderabad next Friday"
+              │
+              ▼  TravelPlanner (Nova Lite)  [nova/planner.py]
+{
+  "route":   { "from": "Bengaluru", "to": "Hyderabad",
+               "date": "2026-03-13", "class": "economy" },
+  "filters": { "departure_window": ["06:00", "11:59"],
+               "max_stops": null,
+               "sort_by": "departure" },
+  "agents":  ["makemytrip", "cleartrip", "ixigo"]
+}
+              │
+              ▼  TravelOrchestrator  [agents/orchestrator.py]
+              │  Reads plan["route"] + plan["filters"]
+              │  Dispatches to 3 agents in parallel:
+              │
+    ┌─────────┼─────────┐
+    │         │         │
+    ▼         ▼         ▼
+MakeMyTrip  Cleartrip  Ixigo
+agent.search(from_city, to_city, date, travel_class, filters=filters)
+    │
+    │  Inside each agent:
+    │  _filters_to_criteria(filters)
+    │  → "departure between 06:00 and 11:59; sort by departure ascending"
+    │  → nova.act(hint, schema={...})   ← readable hint for browser AI
+    │  → returns raw flight list
+    │
+    └─────────┬─────────┘
+              │  raw_flights from all agents combined
+              ▼  FlightNormalizer  [nova/flight_normalizer.py]
+              │  normalizer.normalize(raw_flights, filters=filters)
+              │
+              │  Step 1: deduplicate same flight across platforms
+              │  Step 2: apply max_stops filter (direct int comparison)
+              │  Step 3: apply departure_window (HH:MM → minutes, range check)
+              │  Step 4: sort by filters["sort_by"]  ("departure" → sort by dep time)
+              │
+              ▼  clean, filtered, sorted list
+              │
+              ▼  Nova Pro Reasoner  [nova/reasoner.py]
+              │  + user's saved cards + card_offers.json
+              │
+              ▼  { winner, all_results, reasoning }
+```
+
+### Why structured filters instead of free-text criteria?
+
+| Approach | Old (free text) | New (structured dict) |
+|---|---|---|
+| Planner output | `"morning flights 7am-10am"` | `{"departure_window": ["06:00","11:59"]}` |
+| Agent hint | same string passed as `user_prompt` | `_filters_to_criteria(filters)` builds readable hint |
+| Normalizer filtering | regex `r"(\d+)(am\|pm)"` — fragile | `lo <= dep_minutes <= hi` — exact |
+| Sortable | must re-parse | `sort_by` key is already a clean string |
 
 ---
 
@@ -301,21 +400,26 @@ The `return_exceptions=True` is critical: if one platform is down, the others st
 ```
 backend/
 ├── main.py                     FastAPI app + CORS + WebSocket dispatch + lifespan
+├── nova_auth.py                Workflow definition check-then-create (IAM mode)
 │
 ├── nova/                       Amazon Nova model integrations
 │   ├── __init__.py
 │   ├── identifier.py           Nova Lite: image → product name (OCR + knowledge)
+│   ├── planner.py              Nova Lite: NL query → structured plan JSON (travel)
 │   ├── validator.py            Nova Multimodal: cosine similarity SKU validation
+│   ├── flight_normalizer.py    Pure Python: dedup + filter + sort flight results
 │   └── reasoner.py             Nova Pro: card offer math + winner selection
 │
-├── agents/                     Nova Act browser agents (one per platform)
+├── agents/                     Nova Act browser agents
 │   ├── __init__.py
-│   ├── amazon.py               NovaAct → amazon.in search + extraction
-│   ├── flipkart.py             NovaAct → flipkart.com search + extraction
-│   ├── makemytrip.py           NovaAct → makemytrip.com flight search
-│   ├── goibibo.py              NovaAct → goibibo.com flight search
-│   ├── cleartrip.py            NovaAct → cleartrip.com flight search
-│   └── orchestrator.py         ThreadPoolExecutor + WebSocket streaming logic
+│   ├── act_handler.py          Shared exception handler for travel agents
+│   ├── ixigo/                  package: agent.py + config.yaml (+ class_codes for URL)
+│   ├── amazon/                 package: agent.py + config.yaml
+│   ├── flipkart/               package: agent.py + config.yaml
+│   ├── makemytrip/             package: agent.py + config.yaml
+│   ├── cleartrip/              package: agent.py + config.yaml + instructions/
+│   ├── goibibo/                package: agent.py + config.yaml (kept, not default)
+│   └── orchestrator.py         TravelOrchestrator + ProductOrchestrator
 │
 ├── routers/                    FastAPI route handlers
 │   ├── __init__.py
@@ -326,6 +430,14 @@ backend/
 ├── data/
 │   └── card_offers.json        Bank card offer database (5 cards × 5 platforms)
 │
+├── tests/                      Individual agent + pipeline tests
+│   ├── run_agent.sh            Quick test runner (e.g. ./run_agent.sh cleartrip)
+│   ├── test_nova_planner.py    TravelPlanner unit test
+│   ├── test_makemytrip_agent.py
+│   ├── test_cleartrip_agent.py
+│   ├── test_ixigo_agent.py
+│   └── ...
+│
 └── requirements.txt            Python dependencies
 ```
 
@@ -335,13 +447,20 @@ backend/
 
 This is the most important architecture decision for hackathon judges:
 
-### Nova Lite (`us.amazon.nova-lite-v1:0`) — Identifier
-**Role:** Multimodal LLM that reads product screenshots
+### Nova Lite (`us.amazon.nova-lite-v1:0`) — Identifier + Planner
+**Role (Products):** Multimodal LLM that reads product screenshots
 
-**Why Nova Lite, not a catalog-based approach?**
+**Why Nova Lite for product identification, not a catalog-based approach?**
 - A catalog would require: indexing every electronics product → mapping images to SKUs → maintenance when products launch/change → gigabytes of embeddings to build and query
 - Nova Lite already knows product names from training data. It reads the text printed on product listings ("WH-1000XM5", "Galaxy S25+") and uses its knowledge to identify the full product.
 - **No catalog needed.** Input: image bytes. Output: `{ brand, model_name, search_query, confidence }` in 2 seconds.
+
+**Role (Travel):** Text LLM that parses natural language flight queries
+
+**Why Nova Lite for travel planning, not regex parsing?**
+- Regex fails on relative dates ("next Friday"), colloquial time windows ("morning", "late evening"), and ambiguous city names ("Bangalore" vs "Bengaluru").
+- Nova Lite understands natural language semantics: "morning" → `["06:00","11:59"]`, "non-stop" → `max_stops=0`, "cheapest" → `sort_by: "price"`.
+- **Structured output guaranteed.** Input: query string. Output: typed JSON plan with `route`, `filters`, and `agents` keys. Fast model (low latency) keeps the planning step under 2 seconds.
 
 ### Nova Multimodal Embeddings — Validator
 **Role:** Cross-modal similarity check on search results
@@ -355,7 +474,7 @@ This is the most important architecture decision for hackathon judges:
 **Role:** Real-time price extraction from live websites
 
 **Why not use official APIs?**
-- Amazon India, Flipkart, MakeMyTrip, Goibibo, Cleartrip have **no public pricing API** for consumers. The only way to get live prices + card offers is to browse the site as a user would.
+- Amazon India, Flipkart, MakeMyTrip, Cleartrip, Ixigo have **no public pricing API** for consumers. The only way to get live prices + card offers is to browse the site as a user would.
 - Nova Act runs server-side Chromium, fills search forms, reads prices, card offer banners, and delivery info — exactly as a human would, but in structured JSON.
 - Live prices only. Never cached. This is the data source truth for the product.
 
@@ -496,11 +615,13 @@ Only the Chrome extension origin and the web app domain can call the backend.
 |---|---|---|
 | Chrome Extension | ✅ Complete | `frontend_chrome_extension/` — manifest, popup, sidepanel, service-worker, onboarding, icons |
 | Backend — FastAPI | ✅ Complete | `backend/main.py`, all routers |
-| Backend — Nova Lite | ✅ Complete | `backend/nova/identifier.py` |
+| Backend — Nova Lite (identifier) | ✅ Complete | `backend/nova/identifier.py` |
+| Backend — Nova Lite (planner) | ✅ Complete | `backend/nova/planner.py` — NL → structured plan |
 | Backend — Nova Multimodal | ✅ Complete | `backend/nova/validator.py` |
 | Backend — Nova Pro | ✅ Complete | `backend/nova/reasoner.py` |
 | Backend — Nova Sonic | ✅ Complete | `backend/routers/voice.py` (Polly MVP) |
-| Backend — Nova Act Agents | ✅ Complete | `backend/agents/{amazon,flipkart,makemytrip,goibibo,cleartrip}.py` |
+| Backend — FlightNormalizer | ✅ Complete | `backend/nova/flight_normalizer.py` |
+| Backend — Nova Act Agents | ✅ Complete | `backend/agents/{amazon/,flipkart/,makemytrip/,cleartrip/,ixigo/}` |
 | Backend — Orchestrator | ✅ Complete | `backend/agents/orchestrator.py` |
 | Bank Card Database | ✅ Complete | `backend/data/card_offers.json` (5 cards × 5 platforms) |
 | Web App | ✅ Complete | `frontend_webapp/index.html` |

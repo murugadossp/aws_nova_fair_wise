@@ -22,33 +22,50 @@ city_codes:
   indore: IDR
 
 steps:
-  wait:
-    instruction: "Wait for the flight results to fully load."
   extraction:
-    instruction: |
-      Extract flights from this Cleartrip search results page that match: {{criteria}}.
-      Return a JSON array with fields: airline, flight_number, departure (HH:MM), arrival (HH:MM), duration (Xh Ym), stops (integer), price (integer in INR, taxes included), url.
-      For url: use the full absolute link (must start with {{base_url}}/) that opens the booking or flight-details page for that flight when clicked. Do not use relative paths or # fragments.
-      Try to get up to 5 results. If you are running out of steps, return the flights you have collected so far (do not fail).
-      Sort by price ascending. Return ONLY valid JSON array.
+    site_adapter_file: instructions/site_adapter_cleartrip.md
+    extractor_file: instructions/extractor_prompt.md
     schema:
       type: array
       items:
         type: object
+        required:
+          - airline
+          - flight_number
+          - departure
+          - arrival
+          - duration
+          - stops
+          - price
+          - url
+        additionalProperties: false
         properties:
-          airline: { type: string }
-          flight_number: { type: string }
-          departure: { type: string }
-          arrival: { type: string }
-          duration: { type: string }
-          stops: { type: integer }
-          price: { type: integer }
-          url: { type: string }
+          airline:
+            type: string
+          flight_number:
+            type: string
+          departure:
+            type: string
+            pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          arrival:
+            type: string
+            pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          duration:
+            type: string
+            pattern: "^[0-9]+h [0-9]+m$"
+          stops:
+            type: integer
+            minimum: 0
+          price:
+            type: integer
+            minimum: 0
+          url:
+            type: string
+            # {{base_url}} is substituted at runtime (and regex-escaped) before schema is sent to Nova Act
+            pattern: "^{{base_url}}/.*"
+    
   offers:
-    instruction: |
-      For the flights currently shown on this Cleartrip search results page (the ones you just extracted), find what offers or discounts are available. Collect all offer details, apply each offer one by one, and note the price for each flight after applying the offer.
-      Return a JSON object with two fields: "offers_applied" (array of objects with flight_reference or airline+flight_number, offer_name, price_after_offer in INR), and "suggestion" (string recommending which offer to use and why).
-      After you have the data, return your JSON and then stop; do not continue clicking.
+    instruction_file: instructions/offers.md
     schema:
       type: object
       properties:

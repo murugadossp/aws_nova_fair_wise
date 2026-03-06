@@ -33,9 +33,23 @@ def test_goibibo_search(from_city="bangalore", to_city="delhi", days_from_now=7)
     travel_date = (date.today() + timedelta(days=days_from_now)).strftime("%Y-%m-%d")
     log.info("=== test_goibibo_search: %s→%s date=%s ===", from_city, to_city, travel_date)
 
+    # Mirrors the structured dict the orchestrator builds from the planner's output.
+    # filters = planner-extracted structured constraints, not raw user input.
+    search_params = {
+        "from_city":    from_city,
+        "to_city":      to_city,
+        "date":         travel_date,
+        "travel_class": "economy",
+        "filters": {
+            "departure_window": None,
+            "max_stops":        None,
+            "sort_by":          "price",
+        },
+    }
+
     agent = GoibiboAgent()
     log.info("Starting Nova Act browser on goibibo.com...")
-    results = agent.search(from_city=from_city, to_city=to_city, date=travel_date)
+    results = agent.search(**search_params)
 
     log.info("Received %d flights", len(results))
     for i, r in enumerate(results, 1):

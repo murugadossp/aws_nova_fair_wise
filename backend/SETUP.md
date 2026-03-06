@@ -14,6 +14,7 @@ Complete steps to go from zero to a live, working backend.
    - Access type: **Programmatic access**
 3. **Attach policies directly** → search and add:
    - `AmazonBedrockFullAccess`
+   - `AmazonS3FullAccess` (or a scoped policy for the Nova Act S3 bucket)
 4. **Create user → Download CSV** (or copy Access Key ID + Secret)
 
 ### 1B. Check if credentials are already configured
@@ -60,17 +61,21 @@ Access is usually instant for Nova models (no review needed).
 
 ---
 
-## Step 3 — Get Nova Act API Key
+## Step 3 — Nova Act Authentication (IAM mode)
 
-Nova Act requires a separate API key from the Nova console.
+FareWise uses **IAM authentication** for Nova Act — no separate API key needed. The travel agents (MakeMyTrip, Cleartrip, Ixigo) use the `Workflow` class with your existing AWS credentials from Step 1.
 
-1. Open https://nova.amazon.com (or search "Nova Act" in AWS Console)
-2. Sign in with your AWS account
-3. Navigate to **API Keys → Create API Key**
-4. Copy the key — it starts with `na-`
+Each agent calls `nova_auth.get_or_create_workflow_definition(name)` which registers a workflow definition in AWS (like `farewise-cleartrip`) on the first run and caches it in memory. Subsequent calls skip the AWS check.
 
-> If nova.amazon.com is not yet publicly available, check:
-> AWS Console → Amazon Bedrock → Nova → Nova Act
+**S3 bucket:** Workflow definitions require an S3 bucket for artifact storage. Create one in us-east-1:
+
+```bash
+aws s3 mb s3://farewise-nova --region us-east-1
+```
+
+Then set `NOVA_ACT_S3_BUCKET=farewise-nova` in your `.env` (see Step 4).
+
+> **Note:** `NOVA_ACT_API_KEY` is **not** used by the travel agents and is actively removed from the environment before each agent run to prevent conflicts with IAM credentials. You do not need to obtain an API key.
 
 ---
 
@@ -85,12 +90,28 @@ cp .env.example .env
 Open `.env` and fill in your values:
 
 ```env
+# AWS credentials (IAM user with AmazonBedrockFullAccess)
 AWS_ACCESS_KEY_ID=AKIA...your_key_here
 AWS_SECRET_ACCESS_KEY=your_secret_here
 AWS_DEFAULT_REGION=us-east-1
-NOVA_ACT_API_KEY=na-...your_nova_act_key_here
+
+# Nova Act workflow management (IAM mode — no API key needed)
+NOVA_ACT_S3_BUCKET=farewise-nova       # S3 bucket created in Step 3
+
+# Optional: override default workflow names
+# NOVA_ACT_WORKFLOW_MMT=farewise-makemytrip
+# NOVA_ACT_WORKFLOW_CLEARTRIP=farewise-cleartrip
+# NOVA_ACT_WORKFLOW_IXIGO=farewise-ixigo
+
+# Server settings
 FAREWISE_PORT=8000
 FAREWISE_CORS_ORIGINS=chrome-extension://*,http://localhost:*,http://127.0.0.1:*
+
+# Optional: show Nova Act browser window while tests run
+# FAREWISE_HEADED=1
+
+# Optional: increase Nova Act max steps per agent (default 50)
+# NOVA_ACT_MAX_STEPS=50
 ```
 
 ---
@@ -184,12 +205,13 @@ source .venv/bin/activate
 
 # Test each component individually:
 python3 tests/test_nova_identifier.py    # Nova Lite — product ID from text
+python3 tests/test_nova_planner.py       # Nova Lite — NL query → structured plan
 python3 tests/test_nova_reasoner.py      # Nova Pro — price + card math
 python3 tests/test_amazon_agent.py       # Nova Act — live Amazon search
 python3 tests/test_flipkart_agent.py     # Nova Act — live Flipkart search
 python3 tests/test_makemytrip_agent.py   # Nova Act — live MakeMyTrip search
-python3 tests/test_goibibo_agent.py      # Nova Act — live Goibibo search
 python3 tests/test_cleartrip_agent.py    # Nova Act — live Cleartrip search
+python3 tests/test_ixigo_agent.py        # Nova Act — live Ixigo search
 ```
 
 To see the Nova Act browser window while tests run (watch the agent interact with the page), set `FAREWISE_HEADED=1` in your `.env` file, or before running, e.g.:
@@ -227,7 +249,7 @@ FAREWISE_HEADED=1 ./tests/run_agent.sh cleartrip
 | Extension not connecting | Confirm backend is on port 8000; check Settings tab in extension |
 | `ActExceededMaxStepsError` / "Exceeded max steps" | Set `NOVA_ACT_MAX_STEPS=50` (or up to 99) in `.env`; agents return gracefully with partial results |
 
-**Travel search:** The WebSocket payload `route` can include `user_prompt` or `criteria` (e.g. `"morning flights between 6am and 12pm"`) so the agent extracts flights matching that instead of only "cheapest 5".
+**Travel search:** The orchestrator reads `plan["filters"]` (a structured dict from `TravelPlanner`) and passes it to each agent and to `FlightNormalizer`. Filters include `departure_window` (list of two HH:MM strings), `max_stops` (int or null), and `sort_by` (string). Each agent converts this to a readable hint via `_filters_to_criteria(filters)` before passing to `nova.act()`.
 
 ---
 

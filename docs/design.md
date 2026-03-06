@@ -115,8 +115,9 @@ Logo Wordmark: FARE in Bricolage Grotesque 800 weight, WISE in Bricolage Grotesq
 
   /* Travel Mode */
   --makemytrip:     #D42B2B;   /* MakeMyTrip */
-  --goibibo:        #E8390E;   /* Goibibo */
   --cleartrip:      #E87722;   /* Cleartrip */
+  --ixigo:          #FF6F00;   /* Ixigo */
+  --goibibo:        #E8390E;   /* Goibibo (kept; not in default agent set) */
 
   /* Airlines (commonly shown) */
   --indigo:         #1A1F71;
@@ -553,20 +554,20 @@ Why revised from original spec:
 │ ╚══════════════════════════╝   │
 ├────────────────────────────────┤
 │ ┌──────────────────────────┐   │
-│ │ 🟧 Goibibo   ★ BEST     │   │ ← gold border
+│ │ 🟠 Ixigo     ★ BEST     │   │ ← gold border
 │ │ ₹4,201  SBI card         │   │
 │ │ IndiGo 6E-204  7:20 AM   │   │
 │ │ ₹4,890 − SBI 14% − ₹0   │   │
-│ │       [BOOK ON GOIBIBO →]│   │
-│ └──────────────────────────┘   │
-│ ┌──────────────────────────┐   │
-│ │ 🔴 MakeMyTrip            │   │
-│ │ ₹5,891                   │   │
-│ │ IndiGo 6E-204  7:20 AM   │   │
+│ │       [BOOK ON IXIGO →]  │   │
 │ └──────────────────────────┘   │
 │ ┌──────────────────────────┐   │
 │ │ 🟠 Cleartrip             │   │
 │ │ ₹4,680  HDFC card        │   │
+│ │ IndiGo 6E-204  7:20 AM   │   │
+│ └──────────────────────────┘   │
+│ ┌──────────────────────────┐   │
+│ │ 🔴 MakeMyTrip            │   │
+│ │ ₹5,891                   │   │
 │ │ IndiGo 6E-204  7:20 AM   │   │
 │ └──────────────────────────┘   │
 └────────────────────────────────┘
@@ -582,7 +583,7 @@ Why revised from original spec:
 ```
 1. NAV        ✅ — Logo (Bricolage Grotesque) + "Add to Chrome" (sticky, blur backdrop)
 2. HERO       ✅ — Two-column grid: headline left (clamp 32-46px) + extension mock right (400px fixed)
-                   Platform trust strip: Amazon · Flipkart · MakeMyTrip · Goibibo · Cleartrip chips
+                   Platform trust strip: Amazon · Flipkart · MakeMyTrip · Cleartrip · Ixigo chips
 3. HOW        ✅ — "How It Works" — tabbed (Products / Travel), 3 numbered steps each
 4. DEMO       ✅ — Interactive demo: 2.2s animated search → result cards + Nova Pro reasoning
 5. NOVA       ✅ — 5 Nova model cards (Nova Lite, Multimodal, Act×2, Pro, Sonic)
@@ -615,7 +616,7 @@ Note: Background grid uses CSS `background-image: linear-gradient` dots at 5% op
 │  [Add to Chrome — Free]           └──────────────┘ │
 │  [Try on Web →]                                    │
 │                                                    │
-│  [Amazon] [Flipkart] [MakeMyTrip] [Goibibo] [CT]  │
+│  [Amazon] [Flipkart] [MakeMyTrip] [Cleartrip] [Ixigo] │
 └────────────────────────────────────────────────────┘
 Grid: 1fr 400px at 1440px viewport; stacks on mobile.
 ```

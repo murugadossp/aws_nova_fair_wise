@@ -38,15 +38,30 @@ class GoibiboAgent:
         codes = _CONFIG.get("city_codes") or {}
         return codes.get(city.lower().strip(), city.upper()[:3])
 
+    @staticmethod
+    def _filters_to_criteria(filters: dict | None) -> str:
+        """Convert structured filters dict → readable criteria hint for Nova Act."""
+        if not filters:
+            return "top 5 cheapest flights sorted by price ascending"
+        parts = []
+        dep_window = filters.get("departure_window")
+        if dep_window and len(dep_window) == 2:
+            parts.append(f"departure between {dep_window[0]} and {dep_window[1]}")
+        if filters.get("max_stops") == 0:
+            parts.append("non-stop flights only")
+        sort_by = filters.get("sort_by", "price")
+        parts.append(f"sort by {sort_by} ascending")
+        return "; ".join(parts)
+
     def search(
         self,
         from_city: str,
         to_city: str,
         date: str,
         travel_class: str = "economy",
-        user_prompt: str | None = None,
+        filters: dict | None = None,
     ) -> list[dict]:
-        log.info("Searching Goibibo: %s→%s date=%s class=%s user_prompt=%s", from_city, to_city, date, travel_class, user_prompt)
+        log.info("Searching Goibibo: %s→%s date=%s class=%s filters=%s", from_city, to_city, date, travel_class, filters)
 
         os.environ.pop("NOVA_ACT_API_KEY", None)
 
@@ -65,8 +80,7 @@ class GoibiboAgent:
         try:
             results: list[dict] = []
             max_steps = int(os.environ.get("NOVA_ACT_MAX_STEPS", _CONFIG.get("max_steps_default", 50)))
-            default_criteria = _CONFIG.get("default_criteria", "top 5 cheapest flights")
-            criteria = (user_prompt or default_criteria).strip()
+            criteria = self._filters_to_criteria(filters)
 
             with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf:
                 with NovaAct(workflow=wf, starting_page=url, headless=headless, tty=False) as nova:

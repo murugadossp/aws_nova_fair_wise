@@ -1,0 +1,62 @@
+workflow_name: "farewise-ixigo"
+base_url: "https://www.ixigo.com"
+max_steps_default: 50
+
+class_codes:
+  economy: e
+  business: b
+  first: f
+  premium economy: pe
+
+city_codes:
+  mumbai: BOM
+  delhi: DEL
+  bangalore: BLR
+  bengaluru: BLR
+  hyderabad: HYD
+  chennai: MAA
+  kolkata: CCU
+  pune: PNQ
+  ahmedabad: AMD
+  goa: GOI
+  jaipur: JAI
+  kochi: COK
+  cochin: COK
+  lucknow: LKO
+  chandigarh: IXC
+  indore: IDR
+  bhubaneswar: BBI
+  nagpur: NAG
+  coimbatore: CJB
+  visakhapatnam: VTZ
+  vizag: VTZ
+  patna: PAT
+  srinagar: SXR
+  amritsar: ATQ
+  varanasi: VNS
+  leh: IXL
+  aurangabad: IXU
+
+steps:
+  wait:
+    instruction: "Wait for the flight search results to fully load. If a login prompt or app download banner appears, dismiss it."
+  extraction:
+    instruction: |
+      Extract flights from this Ixigo search results page that match: {{criteria}}.
+      For each flight return: airline (full name e.g. "IndiGo", "Air India", "SpiceJet"), flight_number (e.g. "6E-2345"), departure (HH:MM 24h), arrival (HH:MM 24h), duration (Xh Ym e.g. "2h 15m"), stops (integer, 0 for non-stop), price (integer INR including all taxes and fees), url.
+      For url: use the full absolute booking URL for this specific flight. If no direct booking URL exists, use the current page URL.
+      Try to get up to 5 results. If you are running out of steps, return the flights you have collected so far (do not fail).
+      Return ONLY a valid JSON array sorted by price ascending.
+    schema:
+      type: array
+      items:
+        type: object
+        properties:
+          airline: { type: string }
+          flight_number: { type: string }
+          departure: { type: string }
+          arrival: { type: string }
+          duration: { type: string }
+          stops: { type: integer }
+          price: { type: integer }
+          url: { type: string }

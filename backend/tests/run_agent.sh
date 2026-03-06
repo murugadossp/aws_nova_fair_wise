@@ -32,22 +32,25 @@ usage() {
   echo -e "    ${YELLOW}amazon${NC}       Amazon India product search          (Nova Act · browser)"
   echo -e "    ${YELLOW}flipkart${NC}     Flipkart product search              (Nova Act · browser)"
   echo -e "    ${YELLOW}mmt${NC}          MakeMyTrip flight search             (Nova Act · browser)"
-  echo -e "    ${YELLOW}goibibo${NC}      Goibibo flight search                (Nova Act · browser)"
   echo -e "    ${YELLOW}cleartrip${NC}    Cleartrip flight search              (Nova Act · browser)"
+  echo -e "    ${YELLOW}ixigo${NC}        Ixigo flight search                  (Nova Act · browser)"
+  echo -e "    ${YELLOW}goibibo${NC}      Goibibo flight search (legacy)       (Nova Act · browser)"
   echo ""
   echo -e "  ${CYAN}Nova model tests:${NC}"
   echo -e "    ${YELLOW}identifier${NC}   Nova Lite  — product identification  (Bedrock · no browser)"
   echo -e "    ${YELLOW}validator${NC}    Nova Multimodal — image validator    (Bedrock · no browser)"
   echo -e "    ${YELLOW}reasoner${NC}     Nova Pro   — price reasoning         (Bedrock · no browser)"
+  echo -e "    ${YELLOW}planner${NC}      Travel planner — query parsing       (Bedrock · no browser)"
   echo ""
   echo -e "  ${CYAN}Groups:${NC}"
   echo -e "    ${YELLOW}products${NC}     amazon + flipkart"
-  echo -e "    ${YELLOW}travel${NC}       mmt + goibibo + cleartrip"
-  echo -e "    ${YELLOW}nova${NC}         identifier + validator + reasoner"
+  echo -e "    ${YELLOW}travel${NC}       mmt + cleartrip + ixigo"
+  echo -e "    ${YELLOW}nova${NC}         identifier + validator + reasoner + planner"
   echo -e "    ${YELLOW}all${NC}          nova + products + travel  (slow — opens 5 browser windows)"
   echo ""
   echo -e "  ${CYAN}Examples:${NC}"
   echo -e "    ./tests/run_agent.sh amazon"
+  echo -e "    ./tests/run_agent.sh ixigo"
   echo -e "    ./tests/run_agent.sh travel"
   echo -e "    ./tests/run_agent.sh all"
   echo ""
@@ -119,11 +122,14 @@ case "$1" in
   mmt|makemytrip)
     run_test "MakeMyTrip Agent"     "test_makemytrip_agent.py"
     ;;
-  goibibo)
-    run_test "Goibibo Agent"        "test_goibibo_agent.py"
-    ;;
   cleartrip)
     run_test "Cleartrip Agent"      "test_cleartrip_agent.py"
+    ;;
+  ixigo)
+    run_test "Ixigo Agent"          "test_ixigo_agent.py"
+    ;;
+  goibibo)
+    run_test "Goibibo Agent"        "test_goibibo_agent.py"
     ;;
 
   # ── Nova model tests ───────────────────────────────────────────────────────
@@ -136,6 +142,9 @@ case "$1" in
   reasoner)
     run_test "Nova Pro — Reasoner"          "test_nova_reasoner.py"
     ;;
+  planner)
+    run_test "Travel Planner"               "test_nova_planner.py"
+    ;;
 
   # ── Groups ─────────────────────────────────────────────────────────────────
   products)
@@ -145,29 +154,31 @@ case "$1" in
     print_summary
     ;;
   travel)
-    echo -e "\n${BOLD}Group: travel (mmt + goibibo + cleartrip)${NC}"
+    echo -e "\n${BOLD}Group: travel (mmt + cleartrip + ixigo)${NC}"
     run_test "MakeMyTrip Agent"     "test_makemytrip_agent.py"
-    run_test "Goibibo Agent"        "test_goibibo_agent.py"
     run_test "Cleartrip Agent"      "test_cleartrip_agent.py"
+    run_test "Ixigo Agent"          "test_ixigo_agent.py"
     print_summary
     ;;
   nova)
-    echo -e "\n${BOLD}Group: nova models (identifier + validator + reasoner)${NC}"
+    echo -e "\n${BOLD}Group: nova models (identifier + validator + reasoner + planner)${NC}"
     run_test "Nova Lite — Identifier"       "test_nova_identifier.py"
     run_test "Nova Multimodal — Validator"  "test_nova_validator.py"
     run_test "Nova Pro — Reasoner"          "test_nova_reasoner.py"
+    run_test "Travel Planner"               "test_nova_planner.py"
     print_summary
     ;;
   all)
-    echo -e "\n${BOLD}All tests — Nova models first, then browser agents (expect 5–8 min total)${NC}"
+    echo -e "\n${BOLD}All tests — Nova models first, then browser agents (expect 6–9 min total)${NC}"
     run_test "Nova Lite — Identifier"       "test_nova_identifier.py"
     run_test "Nova Multimodal — Validator"  "test_nova_validator.py"
     run_test "Nova Pro — Reasoner"          "test_nova_reasoner.py"
+    run_test "Travel Planner"               "test_nova_planner.py"
     run_test "Amazon India Agent"           "test_amazon_agent.py"
     run_test "Flipkart Agent"               "test_flipkart_agent.py"
     run_test "MakeMyTrip Agent"             "test_makemytrip_agent.py"
-    run_test "Goibibo Agent"                "test_goibibo_agent.py"
     run_test "Cleartrip Agent"              "test_cleartrip_agent.py"
+    run_test "Ixigo Agent"                  "test_ixigo_agent.py"
     print_summary
     ;;
 
