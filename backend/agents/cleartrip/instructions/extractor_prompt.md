@@ -1,4 +1,3 @@
-Wait for the flight search results to fully load.
 If a login prompt, cookie banner, or app download popup appears, dismiss it.
 
 Extract {{criteria}} from this search results page.

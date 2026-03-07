@@ -47,6 +47,10 @@ steps:
     instruction_file: instructions/pre_filter_timings.md
     max_steps: 10
 
+  extract_with_filter:
+    site_adapter_file: instructions/site_adapter_cleartrip.md
+    extractor_file: instructions/extract_with_filter.md
+
   extraction:
     site_adapter_file: instructions/site_adapter_cleartrip.md
     extractor_file: instructions/extractor_prompt.md

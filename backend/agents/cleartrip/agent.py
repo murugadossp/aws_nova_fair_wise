@@ -174,39 +174,58 @@ class CleartripAgent:
                 with NovaAct(workflow=wf, starting_page=url, headless=headless, tty=False) as nova:
                     log.debug("Nova Act browser started for cleartrip.com (workflow=%s)", workflow_name)
 
-                    # ── Pre-filter: click TIMINGS checkboxes if departure_window is set ──
+                    # ── Decide: combined filter+extract (one act) or extraction-only ──
                     checkboxes = _departure_window_to_checkboxes(
                         (filters or {}).get("departure_window"),
                     )
-                    prefilter_cfg = _CONFIG["steps"].get("pre_filter")
-                    if checkboxes and prefilter_cfg:
-                        pf_path = _AGENT_DIR / prefilter_cfg["instruction_file"]
-                        pf_instruction = _sub(
-                            pf_path.read_text(encoding="utf-8").strip(),
+                    extraction_cfg = _CONFIG["steps"]["extraction"]
+                    extraction_schema = extraction_cfg["schema"]
+                    extracted = None
+
+                    if checkboxes and _CONFIG["steps"].get("extract_with_filter"):
+                        combined_cfg = _CONFIG["steps"]["extract_with_filter"]
+                        combined_instruction = _sub(
+                            _get_instruction(combined_cfg),
                             from_city=from_city,
                             checkboxes=", ".join(f'"{cb}"' for cb in checkboxes),
                         )
-                        pf_max_steps = prefilter_cfg.get("max_steps", 10)
-                        log.info("Pre-filter: clicking TIMINGS %s for %s", checkboxes, from_city)
+                        log.info("Combined filter+extract: TIMINGS %s for %s (single act)", checkboxes, from_city)
                         try:
-                            nova.act(pf_instruction, max_steps=pf_max_steps)
-                            log.info("Pre-filter applied, proceeding with extraction")
-                        except Exception as pf_err:
-                            log.warning("Pre-filter failed (%s), extracting unfiltered page", pf_err)
+                            extracted = nova.act(
+                                combined_instruction,
+                                max_steps=max_steps,
+                                schema=extraction_schema,
+                            )
+                        except Exception as combined_err:
+                            log.warning("Combined filter+extract failed (%s), falling back to two-act approach", combined_err)
+                            extracted = None
 
-                    # ── Extraction: read all visible flights ──
-                    extraction_cfg = _CONFIG["steps"]["extraction"]
-                    extraction_instruction = _sub(
-                        _get_instruction(extraction_cfg),
-                        criteria=criteria,
-                    )
-                    extraction_schema = extraction_cfg["schema"]
+                    if extracted is None:
+                        if checkboxes and extracted is None:
+                            prefilter_cfg = _CONFIG["steps"].get("pre_filter")
+                            if prefilter_cfg:
+                                pf_path = _AGENT_DIR / prefilter_cfg["instruction_file"]
+                                pf_instruction = _sub(
+                                    pf_path.read_text(encoding="utf-8").strip(),
+                                    from_city=from_city,
+                                    checkboxes=", ".join(f'"{cb}"' for cb in checkboxes),
+                                )
+                                pf_max_steps = prefilter_cfg.get("max_steps", 10)
+                                log.info("Fallback pre-filter: clicking TIMINGS %s for %s", checkboxes, from_city)
+                                try:
+                                    nova.act(pf_instruction, max_steps=pf_max_steps)
+                                except Exception as pf_err:
+                                    log.warning("Fallback pre-filter failed (%s), extracting unfiltered", pf_err)
 
-                    extracted = nova.act(
-                        extraction_instruction,
-                        max_steps=max_steps,
-                        schema=extraction_schema,
-                    )
+                        extraction_instruction = _sub(
+                            _get_instruction(extraction_cfg),
+                            criteria=criteria,
+                        )
+                        extracted = nova.act(
+                            extraction_instruction,
+                            max_steps=max_steps,
+                            schema=extraction_schema,
+                        )
 
                     items = None
                     if isinstance(extracted, ActGetResult) and isinstance(getattr(extracted, "parsed_response", None), list):
