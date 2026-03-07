@@ -28,7 +28,7 @@ log = get_logger(__name__)
 # ── Test Phases ─────────────────────────────────────────────
 RUN_PHASE_1 = True       # Agent extracts ALL flights (always needed)
 RUN_PHASE_2 = True       # FlightNormalizer filters + sorts + deduplicates
-RUN_PHASE_3 = False      # Offers analysis in same browser session (adds ~30s)
+RUN_PHASE_3 = True       # Offers: Book → fare+coupons → traveler → fare breakdown for top N cheapest
 
 # ── Schema constants ────────────────────────────────────────
 REQUIRED_FLIGHT_FIELDS = (
@@ -118,23 +118,108 @@ def validate_filtered_results(filtered: list[dict], filters: dict):
 
 # ── Phase 3 validation ─────────────────────────────────────
 
-def validate_offers(raw: dict | list):
-    """Validate offers analysis from the agent."""
+REQUIRED_COUPON_FIELDS = ("code", "description", "discount", "price_after_coupon")
+REQUIRED_OFFER_FIELDS = ("flight_number", "airline", "original_price", "fare_type", "coupons", "fare_breakdown", "additional_urls")
+REQUIRED_FARE_BREAKDOWN_FIELDS = ("base_fare", "taxes", "convenience_fee", "total_fare")
+
+
+def validate_offers(raw: dict | list, filters: dict | None = None, filtered_flights: list[dict] | None = None):
+    """Validate Phase 3: coupons + fare breakdown for each flight.
+    When filtered_flights is provided, each offer must be for a flight in that list (offers use filtered list).
+    """
     if not isinstance(raw, dict) or "flights" not in raw:
         log.warning("Phase 3: agent returned list (no offers dict) — offers may not have been captured")
         return
+
     offers = raw.get("offers_analysis", [])
-    suggestion = raw.get("suggestion", "")
-    if offers:
-        log.info("  Offers (%d entries):", len(offers))
-        for i, o in enumerate(offers, 1):
-            log.info("    [%d] %s → ₹%s (%s)", i,
-                     o.get("flight_reference", o.get("offer_name", "?")),
-                     o.get("price_after_offer", "?"),
-                     o.get("offer_name", "?"))
-        assert_ok(all("offer_name" in o for o in offers), "offers must have offer_name")
-    if suggestion:
-        log.info("  Suggestion: %s", suggestion)
+    assert_ok(len(offers) > 0, "Phase 3: offers_analysis is empty — no flights processed")
+    assert_ok(len(offers) <= 2, "Phase 3: offers_analysis should have at most 2 entries (offers_top_n=2)")
+
+    # Offers must be for flights from the filtered list (respecting departure_window / max_stops)
+    if filtered_flights:
+        allowed = {(f.get("flight_number"), f.get("airline")) for f in filtered_flights}
+        for i, entry in enumerate(offers):
+            key = (entry.get("flight_number"), entry.get("airline"))
+            assert_ok(key in allowed,
+                     f"offers_analysis[{i}] {entry.get('flight_number')} must be in filtered list (offers use filtered flights)")
+
+    # When departure_window is set, each offer must be for a flight within that window
+    if filters and filtered_flights:
+        window = filters.get("departure_window")
+        if window and len(window) == 2:
+            lo, hi = _parse_hhmm(window[0]), _parse_hhmm(window[1])
+            dep_by_key = {(f.get("flight_number"), f.get("airline")): _parse_hhmm(f.get("departure", "00:00")) for f in filtered_flights}
+            for i, entry in enumerate(offers):
+                key = (entry.get("flight_number"), entry.get("airline"))
+                dep = dep_by_key.get(key)
+                if dep is not None:
+                    assert_ok(lo <= dep <= hi,
+                              f"offers_analysis[{i}] departure must be in window {window[0]}–{window[1]}")
+
+    for i, entry in enumerate(offers):
+        for field in REQUIRED_OFFER_FIELDS:
+            assert_ok(field in entry,
+                      f"offers_analysis[{i}] missing field: {field}")
+
+        add_urls = entry.get("additional_urls", {})
+        assert_ok(isinstance(add_urls, dict), f"offers_analysis[{i}] additional_urls must be a dict")
+        assert_ok("itinerary" in add_urls, f"offers_analysis[{i}] additional_urls must contain 'itinerary'")
+        if "error" not in entry and add_urls.get("itinerary"):
+            url_val = add_urls["itinerary"]
+            assert_ok(isinstance(url_val, str) and url_val.startswith("http"),
+                      f"offers_analysis[{i}] additional_urls.itinerary must be a non-empty URL string, got {type(url_val).__name__!r}")
+        if "error" not in entry and add_urls.get("payment"):
+            pay_val = add_urls["payment"]
+            assert_ok(isinstance(pay_val, str) and pay_val.startswith("http"),
+                      f"offers_analysis[{i}] additional_urls.payment must be a URL string, got {type(pay_val).__name__!r}")
+
+        assert_ok(isinstance(entry["original_price"], int),
+                  f"offers_analysis[{i}] original_price must be int")
+        assert_ok(entry["fare_type"] == "VALUE",
+                  f"offers_analysis[{i}] fare_type must be VALUE, got {entry['fare_type']}")
+
+        coupons = entry.get("coupons", [])
+        fb = entry.get("fare_breakdown", {})
+        log.info("  [%d] %s %s  original=₹%d  coupons=%d  fare_breakdown=%s%s",
+                 i + 1, entry.get("airline"), entry.get("flight_number"),
+                 entry.get("original_price", 0), len(coupons),
+                 "yes" if fb else "empty",
+                 f"  error={entry['error']}" if "error" in entry else "")
+
+        if "error" in entry:
+            continue
+
+        for j, c in enumerate(coupons):
+            for field in REQUIRED_COUPON_FIELDS:
+                assert_ok(field in c,
+                          f"offers_analysis[{i}].coupons[{j}] missing field: {field}")
+            assert_ok(isinstance(c["discount"], int),
+                      f"coupon[{j}] discount must be int")
+            assert_ok(c["price_after_coupon"] == entry["original_price"] - c["discount"],
+                      f"coupon[{j}] price_after_coupon mismatch: "
+                      f"{c['price_after_coupon']} != {entry['original_price']} - {c['discount']}")
+            log.info("    coupon: %s — %s  discount=₹%d  after=₹%d",
+                     c.get("code"), c.get("description", "")[:50],
+                     c.get("discount", 0), c.get("price_after_coupon", 0))
+
+        # Fare breakdown validation
+        if fb:
+            for field in REQUIRED_FARE_BREAKDOWN_FIELDS:
+                assert_ok(field in fb,
+                          f"offers_analysis[{i}].fare_breakdown missing field: {field}")
+            for field in REQUIRED_FARE_BREAKDOWN_FIELDS:
+                assert_ok(isinstance(fb.get(field), int),
+                          f"fare_breakdown.{field} must be int, got {type(fb.get(field))}")
+                assert_ok(fb.get(field, -1) >= 0,
+                          f"fare_breakdown.{field} must be >= 0, got {fb.get(field)}")
+            assert_ok(fb["total_fare"] >= fb["base_fare"],
+                      f"fare_breakdown total_fare (₹{fb['total_fare']}) must be >= base_fare (₹{fb['base_fare']})")
+            log.info("    fare: base=₹%d  taxes=₹%d  conv_fee=₹%d  total=₹%d",
+                     fb.get("base_fare", 0), fb.get("taxes", 0),
+                     fb.get("convenience_fee", 0), fb.get("total_fare", 0))
+        else:
+            log.warning("    fare_breakdown is empty for %s %s",
+                        entry.get("airline"), entry.get("flight_number"))
 
 
 # ── Main test function ──────────────────────────────────────
@@ -162,11 +247,9 @@ def test_cleartrip_search(from_city="delhi", to_city="mumbai", days_from_now=7, 
     if isinstance(raw, dict) and "flights" in raw:
         results = raw["flights"]
         offers_analysis = raw.get("offers_analysis", [])
-        suggestion = raw.get("suggestion", "")
     else:
         results = raw if isinstance(raw, list) else []
         offers_analysis = []
-        suggestion = ""
 
     log.info("Phase 1: Agent extracted %d raw flights", len(results))
     for i, r in enumerate(results, 1):
@@ -199,15 +282,18 @@ def test_cleartrip_search(from_city="delhi", to_city="mumbai", days_from_now=7, 
     else:
         log.info("Phase 2 SKIPPED%s", "" if not filters else " (RUN_PHASE_2=False)")
 
-    # ── Phase 3: Offers (if enabled) ────────────────────────────
+    # ── Phase 3: Offers — Book → fare+coupons → traveler → fare breakdown ─
     if RUN_PHASE_3:
-        validate_offers(raw)
-        log.info("Phase 3 PASSED")
+        log.info("Phase 3: Validating offers for top 2 cheapest flights (%d entries)",
+                 len(offers_analysis))
+        validate_offers(raw, filters=filters, filtered_flights=filtered if RUN_PHASE_2 and filters else None)
+        log.info("Phase 3 PASSED (%d flights with coupon data)", len(offers_analysis))
     else:
         log.info("Phase 3 SKIPPED (set RUN_PHASE_3 = True to enable)")
 
-    log.info("test_cleartrip_search PASSED  (raw=%d, filtered=%d)", len(results), len(filtered))
-    return {"raw": results, "filtered": filtered, "offers_analysis": offers_analysis, "suggestion": suggestion}
+    log.info("test_cleartrip_search PASSED  (raw=%d, filtered=%d, offers=%d)",
+             len(results), len(filtered), len(offers_analysis))
+    return {"raw": results, "filtered": filtered, "offers_analysis": offers_analysis}
 
 
 if __name__ == "__main__":

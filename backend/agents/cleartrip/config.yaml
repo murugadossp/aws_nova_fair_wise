@@ -1,6 +1,7 @@
 workflow_name: "farewise-cleartrip"
 base_url: "https://www.cleartrip.com"
 max_steps_default: 50
+offers_top_n: 2
 
 city_codes:
   mumbai: BOM
@@ -87,17 +88,56 @@ steps:
             type: integer
             minimum: 0
     
-  offers:
-    instruction_file: instructions/offers.md
+  book_flight:
+    instruction_file: instructions/book_flight.md
+    max_steps: 8
+
+  select_fare_extract_coupons:
+    instruction_file: instructions/select_fare_extract_coupons.md
+    max_steps: 15
+    schema:
+      type: array
+      items:
+        type: object
+        required:
+          - code
+          - description
+          - discount
+        additionalProperties: false
+        properties:
+          code:
+            type: string
+          description:
+            type: string
+          discount:
+            type: integer
+            minimum: 0
+
+  fill_traveler_proceed:
+    instruction_file: instructions/fill_traveler_proceed.md
+    max_steps: 30
+
+  extract_fare_breakdown:
+    instruction_file: instructions/extract_fare_breakdown.md
+    max_steps: 10
     schema:
       type: object
+      required:
+        - base_fare
+        - taxes
+        - convenience_fee
+        - total_fare
+      additionalProperties: false
       properties:
-        offers_applied:
-          type: array
-          items:
-            type: object
-            properties:
-              flight_reference: { type: string }
-              offer_name: { type: string }
-              price_after_offer: { type: integer }
-        suggestion: { type: string }
+        base_fare:
+          type: integer
+          minimum: 0
+        taxes:
+          type: integer
+          minimum: 0
+        convenience_fee:
+          type: integer
+          minimum: 0
+        total_fare:
+          type: integer
+          minimum: 0

@@ -206,26 +206,32 @@ class TravelOrchestrator:
         date: str,
         travel_class: str,
         filters: Optional[dict],
-    ) -> list[dict]:
-        """Run one travel agent in the thread pool, stream start/done events."""
+    ) -> dict:
+        """Run one travel agent; return {flights, offers_analysis} so full filtered list + top-2 coupons are preserved."""
         await self._send({"type": "agent_start", "agent": name})
         try:
+            kwargs = {}
+            if name == "cleartrip":
+                kwargs["fetch_offers"] = True
             result = await _run_in_thread(
                 agent.search,
                 from_city, to_city, date, travel_class,
                 filters,
+                **kwargs,
             )
-            # Cleartrip can return list (extraction only) or dict with "flights" (extraction + offers).
+            # Cleartrip can return list (extraction only) or dict with "flights" and optional "offers_analysis".
             if isinstance(result, dict) and "flights" in result:
                 flights = result["flights"]
+                offers_analysis = result.get("offers_analysis")
             else:
                 flights = result if isinstance(result, list) else []
+                offers_analysis = None
             await self._send({"type": "agent_done", "agent": name, "count": len(flights)})
-            return flights
+            return {"flights": flights, "offers_analysis": offers_analysis}
         except Exception as e:
             log.error("%s agent raised exception: %s", name, e)
             await self._send({"type": "agent_done", "agent": name, "count": 0, "error": str(e)})
-            return []
+            return {"flights": [], "offers_analysis": None}
 
     async def run(
         self,
@@ -283,13 +289,16 @@ class TravelOrchestrator:
             ]
             gathered = await asyncio.gather(*coros, return_exceptions=True)
 
-            # Flatten results; exceptions already logged inside _run_agent
+            # Flatten flights from each agent; collect offers_analysis (e.g. Cleartrip top-2 with coupons)
             raw_flights: list[dict] = []
+            offers_analysis: Optional[list] = None
             for item in gathered:
-                if isinstance(item, list):
-                    raw_flights.extend(item)
-                elif isinstance(item, Exception):
+                if isinstance(item, Exception):
                     log.error("Unexpected exception in gathered results: %s", item)
+                elif isinstance(item, dict):
+                    raw_flights.extend(item.get("flights", []))
+                    if item.get("offers_analysis"):
+                        offers_analysis = item["offers_analysis"]
 
             log.info("Gathered %d raw flights from %d agents", len(raw_flights), n)
 
@@ -317,13 +326,17 @@ class TravelOrchestrator:
                 selected_cards=cards,
             )
 
-            await self._send({
+            payload = {
                 "type":      "results",
                 "route":     {"from": from_city, "to": to_city, "date": date, "class": travel_class},
                 "winner":    deal.get("winner"),
                 "all":       deal.get("all_results", flights),
                 "reasoning": deal.get("reasoning"),
-            })
+            }
+            # Full filtered list in "all"; top-2 with coupons in offers_analysis (Cleartrip); others in list but not analyzed
+            if offers_analysis is not None:
+                payload["offers_analysis"] = offers_analysis
+            await self._send(payload)
 
             log.info("TravelOrchestrator completed: winner=%s", deal.get("winner", {}).get("platform"))
             await self._send({"type": "done"})

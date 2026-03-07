@@ -46,6 +46,12 @@ def _get_instruction(step_cfg: dict) -> str:
     return f"{site_content}\n\n{extractor_content}"
 
 
+def _get_single_instruction(step_cfg: dict) -> str:
+    """Read a single instruction file (no site adapter)."""
+    path = _AGENT_DIR / step_cfg["instruction_file"]
+    return path.read_text(encoding="utf-8").strip()
+
+
 def _build_results(items: list[dict], search_url: str, from_city: str, to_city: str, date: str, travel_class: str) -> list[dict]:
     """Convert raw extracted items into normalised result dicts with search page URL."""
     results = []
@@ -138,6 +144,160 @@ class CleartripAgent:
     def _filters_to_criteria(filters: dict | None) -> str:
         """No filtering in Nova Act — FlightNormalizer handles it in Python."""
         return "all available flights"
+
+    @staticmethod
+    def _filter_items_for_offers(items: list[dict], filters: dict | None) -> list[dict]:
+        """Apply departure_window and max_stops to raw items so offers use filtered list."""
+        if not filters:
+            return items
+        result = items
+        max_stops = filters.get("max_stops")
+        if max_stops is not None:
+            result = [f for f in result if f.get("stops", 99) <= max_stops]
+        window = filters.get("departure_window")
+        if window and len(window) == 2:
+            try:
+                lo = _hhmm_to_minutes(window[0])
+                hi = _hhmm_to_minutes(window[1])
+            except (ValueError, AttributeError, TypeError):
+                return result
+            filtered = []
+            for f in result:
+                try:
+                    dep = _hhmm_to_minutes(f.get("departure", "00:00"))
+                    if lo <= dep <= hi:
+                        filtered.append(f)
+                except (ValueError, AttributeError, TypeError):
+                    continue
+            result = filtered if filtered else result
+        return result
+
+    @staticmethod
+    def _extract_offers_for_flights(nova, items: list[dict], search_url: str) -> list[dict]:
+        """For top N cheapest flights: Book → fare+coupons → traveler → fare breakdown.
+
+        Runs inside the existing NovaAct session. For each flight: clicks Book,
+        selects fare + extracts coupons, fills dummy traveler details, skips
+        add-ons, and extracts the full fare breakdown from the payment page.
+        Then navigates back to search results for the next flight.
+        """
+        top_n = _CONFIG.get("offers_top_n", 3)
+        sorted_by_price = sorted(items, key=lambda x: x.get("price", float("inf")))
+        targets = sorted_by_price[:top_n]
+
+        offers_results: list[dict] = []
+
+        for idx, flight in enumerate(targets):
+            airline = flight["airline"]
+            flight_number = flight["flight_number"]
+            price = flight["price"]
+            log.info("Phase 3 [%d/%d]: offers for %s %s ₹%d",
+                     idx + 1, len(targets), airline, flight_number, price)
+
+            itinerary_url = ""
+            try:
+                # Navigate back to search results for flights 2+ (programmatic — no agent act)
+                if idx > 0:
+                    log.info("Phase 3: navigating back to search results")
+                    nova.page.goto(search_url)
+                    nova.page.wait_for_load_state("domcontentloaded")
+
+                # Step 1: Click Book on the matching flight card
+                book_cfg = _CONFIG["steps"]["book_flight"]
+                book_instruction = _sub(
+                    _get_single_instruction(book_cfg),
+                    airline=airline,
+                    flight_number=flight_number,
+                    price=str(price),
+                )
+                nova.act(book_instruction, max_steps=book_cfg.get("max_steps", 8))
+
+                # Step 2+3: Select fare and extract coupons (single act)
+                combined_cfg = _CONFIG["steps"]["select_fare_extract_coupons"]
+                combined_instruction = _get_single_instruction(combined_cfg)
+                coupons_extracted = nova.act(
+                    combined_instruction,
+                    max_steps=combined_cfg.get("max_steps", 15),
+                    schema=combined_cfg["schema"],
+                )
+                itinerary_url = nova.page.url
+
+                coupons: list[dict] | None = None
+                if isinstance(coupons_extracted, ActGetResult) and isinstance(
+                    getattr(coupons_extracted, "parsed_response", None), list
+                ):
+                    coupons = coupons_extracted.parsed_response
+                elif isinstance(coupons_extracted, list):
+                    coupons = coupons_extracted
+
+                coupon_list = coupons or []
+                for c in coupon_list:
+                    c["price_after_coupon"] = price - c.get("discount", 0)
+
+                log.info("Phase 3 [%d/%d]: %d coupons for %s %s",
+                         idx + 1, len(targets), len(coupon_list), airline, flight_number)
+
+                # Step 4: Fill dummy traveler details + skip add-ons → payment page
+                fare_breakdown: dict = {}
+                payment_url = ""
+                try:
+                    traveler_cfg = _CONFIG["steps"]["fill_traveler_proceed"]
+                    traveler_instruction = _get_single_instruction(traveler_cfg)
+                    nova.act(traveler_instruction, max_steps=traveler_cfg.get("max_steps", 20))
+
+                    # Step 5: Extract fare breakdown from the payment page right panel
+                    fare_cfg = _CONFIG["steps"]["extract_fare_breakdown"]
+                    fare_instruction = _get_single_instruction(fare_cfg)
+                    fare_result = nova.act(
+                        fare_instruction,
+                        max_steps=fare_cfg.get("max_steps", 10),
+                        schema=fare_cfg["schema"],
+                    )
+                    payment_url = nova.page.url
+
+                    if isinstance(fare_result, ActGetResult) and isinstance(
+                        getattr(fare_result, "parsed_response", None), dict
+                    ):
+                        fare_breakdown = fare_result.parsed_response
+                    elif isinstance(fare_result, dict):
+                        fare_breakdown = fare_result
+
+                    log.info("Phase 3 [%d/%d]: fare breakdown for %s %s — base=₹%s taxes=₹%s conv_fee=₹%s total=₹%s",
+                             idx + 1, len(targets), airline, flight_number,
+                             fare_breakdown.get("base_fare"), fare_breakdown.get("taxes"),
+                             fare_breakdown.get("convenience_fee"), fare_breakdown.get("total_fare"))
+                except Exception as fare_err:
+                    log.warning("Phase 3 [%d/%d]: fare breakdown failed for %s %s: %s",
+                                idx + 1, len(targets), airline, flight_number, fare_err)
+
+                offers_results.append({
+                    "flight_number": flight_number,
+                    "airline": airline,
+                    "original_price": price,
+                    "fare_type": "VALUE",
+                    "coupons": coupon_list,
+                    "fare_breakdown": fare_breakdown,
+                    "additional_urls": {
+                        "itinerary": itinerary_url,
+                        "payment": payment_url,
+                    },
+                })
+
+            except Exception as e:
+                log.warning("Phase 3 [%d/%d]: failed for %s %s: %s",
+                            idx + 1, len(targets), airline, flight_number, e)
+                offers_results.append({
+                    "flight_number": flight_number,
+                    "airline": airline,
+                    "original_price": price,
+                    "fare_type": "VALUE",
+                    "coupons": [],
+                    "fare_breakdown": {},
+                    "additional_urls": {"itinerary": itinerary_url} if itinerary_url else {},
+                    "error": str(e),
+                })
+
+        return offers_results
 
     def search(
         self,
@@ -237,31 +397,19 @@ class CleartripAgent:
                         results = _build_results(items, url, from_city, to_city, date, travel_class)
                         log.info("Cleartrip returned %d flights for %s→%s on %s", len(results), from_city, to_city, date)
 
-                        # Offers step: same browser session, agent reads offers from the open page
+                        # Phase 3: click Book → Continue → extract coupons for top N cheapest (from filtered list)
                         if results and fetch_offers:
-                            offers_cfg = _CONFIG["steps"].get("offers")
-                            if offers_cfg:
-                                try:
-                                    offers_instruction = _get_instruction(offers_cfg)
-                                    offers_schema = offers_cfg["schema"]
-                                    offers_extracted = nova.act(
-                                        offers_instruction,
-                                        max_steps=max_steps,
-                                        schema=offers_schema,
-                                    )
-                                    offers_data = None
-                                    if isinstance(offers_extracted, ActGetResult) and isinstance(getattr(offers_extracted, "parsed_response", None), dict):
-                                        offers_data = offers_extracted.parsed_response
-                                    elif isinstance(offers_extracted, dict):
-                                        offers_data = offers_extracted
-                                    if offers_data:
-                                        return {
-                                            "flights": results,
-                                            "offers_analysis": offers_data.get("offers_applied", []),
-                                            "suggestion": offers_data.get("suggestion", ""),
-                                        }
-                                except Exception as off_e:
-                                    log.warning("Cleartrip offers step failed, returning flights only: %s", off_e)
+                            try:
+                                filtered_items = self._filter_items_for_offers(items, filters)
+                                offers_analysis = self._extract_offers_for_flights(
+                                    nova, filtered_items, url,
+                                )
+                                return {
+                                    "flights": results,
+                                    "offers_analysis": offers_analysis,
+                                }
+                            except Exception as off_e:
+                                log.warning("Cleartrip offers step failed, returning flights only: %s", off_e)
                     else:
                         log.warning("Cleartrip extraction returned unexpected type: %s", type(extracted))
             return results

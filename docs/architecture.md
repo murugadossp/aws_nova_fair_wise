@@ -383,6 +383,8 @@ Run 14 (consistency):  38.7s    6 raw → 4 filtered   Same approach (3-run aver
 Improvement: 58.1s → 38.8s avg = 33% faster, 50% fewer act() calls, zero data loss
 ```
 
+**Phase 3 (offers/coupon extraction):** See [Cleartrip Phase 3 — Review and Next Steps](cleartrip-phase3-review.md) for test-run review, issues (navigate-back, coupon “View All” visibility), and fixes.
+
 ### Why structured filters instead of free-text criteria?
 
 | Approach | Old (free text) | New (structured dict) |
