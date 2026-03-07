@@ -66,6 +66,8 @@ def validate_flight_schema(flights: list[dict]):
         url = (f.get("url") or "").strip()
         assert_ok(url.startswith(CLEARTRIP_BASE_URL + "/flights/results?"),
                   f"flight[{i}] url must be search results URL, got {url[:60]!r}...")
+        assert_ok("class=" in url,
+                  f"flight[{i}] url must contain class= param, got {url[:80]!r}...")
 
 
 # ── Phase 2 validation ─────────────────────────────────────
@@ -213,7 +215,7 @@ if __name__ == "__main__":
     log.info("Test logs also written to %s", log_path)
     filters = {
         "departure_window": ["07:00", "10:00"],
-        "max_stops":        None,
+        "max_stops":        0,
         "sort_by":          "departure",
     }
     result = test_cleartrip_search("Bengaluru", "Hyderabad", days_from_now=4, filters=filters)

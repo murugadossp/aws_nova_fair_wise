@@ -42,6 +42,8 @@ async def _run_tests():
     assert_ok(plan["route"]["to"] == "Delhi", "route.to should be Delhi")
     assert_ok(plan["agents"] == ALL_AGENTS, "default agents should be all three")
     assert_ok("filters" in plan, "plan must contain filters key")
+    assert_ok(plan["filters"].get("max_stops") == 0,
+              f"structured route should default max_stops=0, got {plan['filters']}")
     log.info("Test 1 PASSED ✓")
 
     # ── Test 2: Natural language query ────────────────────────────────────────

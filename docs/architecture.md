@@ -1,7 +1,7 @@
 # FareWise — Architecture Deep Dive
 > Two-Layer Design · Amazon Nova Model Pipeline · WebSocket Streaming · Three Surfaces
 
-**Version:** 1.2 (updated March 2026 — structured filters + TravelPlanner + Ixigo)
+**Version:** 1.3 (updated March 2026 — URL filter encoding + pre-filter pipeline + planner defaults)
 
 ---
 
@@ -203,7 +203,8 @@ Step 2: TRAVELPLANNER  [nova/planner.py]
   Model: us.amazon.nova-lite-v1:0
   Input: natural language query (skipped if structured fields provided)
   Does:  - Extracts route (from/to/date/class)
-         - Infers filters (time windows → departure_window, "non-stop" → max_stops=0)
+         - Infers filters (time windows → departure_window, stops → max_stops)
+         - max_stops defaults to 0 (non-stop); null only if user asks for connecting
          - Selects agents (default all three; subset if user names a platform)
          - Assigns sort_by from intent ("cheapest" → price, "earliest" → departure)
   Output: structured plan JSON
@@ -211,7 +212,7 @@ Step 2: TRAVELPLANNER  [nova/planner.py]
     "route":   { "from": "Bengaluru", "to": "Hyderabad",
                  "date": "2026-03-13", "class": "economy" },
     "filters": { "departure_window": ["06:00", "11:59"],
-                 "max_stops": null, "sort_by": "departure" },
+                 "max_stops": 0, "sort_by": "departure" },
     "agents":  ["makemytrip", "cleartrip", "ixigo"]
   }
   Time:  ~1-2 seconds
@@ -225,10 +226,18 @@ Step 3: NOVA ACT PARALLEL SEARCH  [agents/orchestrator.py]
   │  Thread 2: IxigoAgent.search(...)                              │
   │  Thread 3: CleartripAgent.search(...)                          │
   │                                                                 │
-  │  Each agent internally:                                         │
+  │  MakeMyTrip / Ixigo:                                           │
   │    _filters_to_criteria(filters)                                │
   │    → "departure between 06:00 and 11:59; sort by departure"    │
   │    → nova.act(hint, schema={...})                               │
+  │                                                                 │
+  │  Cleartrip (optimized 3-layer pipeline):                       │
+  │    1. URL encoding: _build_search_url() adds &stops=0&class=   │
+  │       → server-side filter before page loads                    │
+  │    2. Pre-filter act(): clicks TIMINGS checkboxes (26s)        │
+  │       → client-side departure time filter on the page           │
+  │    3. Extraction act(): scrolls + reads all visible cards       │
+  │       → returns raw JSON array                                  │
   └─────────────────────────────────────────────────────────────────┘
   Each streams "agent_done" event as it completes
   Time:  ~45-60 seconds (parallel, not serial)
@@ -267,10 +276,12 @@ User: "morning flights Bengaluru to Hyderabad next Friday"
   "route":   { "from": "Bengaluru", "to": "Hyderabad",
                "date": "2026-03-13", "class": "economy" },
   "filters": { "departure_window": ["06:00", "11:59"],
-               "max_stops": null,
+               "max_stops": 0,
                "sort_by": "departure" },
   "agents":  ["makemytrip", "cleartrip", "ixigo"]
 }
+              │  NOTE: max_stops defaults to 0 (non-stop).
+              │  Set to null only if user explicitly asks for connecting flights.
               │
               ▼  TravelOrchestrator  [agents/orchestrator.py]
               │  Reads plan["route"] + plan["filters"]
@@ -281,8 +292,25 @@ User: "morning flights Bengaluru to Hyderabad next Friday"
     ▼         ▼         ▼
 MakeMyTrip  Cleartrip  Ixigo
 agent.search(from_city, to_city, date, travel_class, filters=filters)
-    │
-    │  Inside each agent:
+    │         │
+    │         │  Cleartrip 3-layer optimized pipeline:
+    │         │  ┌─────────────────────────────────────────────────┐
+    │         │  │ Layer 1: URL ENCODING (_build_search_url)       │
+    │         │  │   &stops=0 (from max_stops) ← server-side      │
+    │         │  │   &class=Economy (from travel_class via config) │
+    │         │  │   → Page loads with only non-stop flights       │
+    │         │  │                                                 │
+    │         │  │ Layer 2: PRE-FILTER (nova.act #1, ~26s)        │
+    │         │  │   Clicks TIMINGS checkboxes (e.g. "Morning")   │
+    │         │  │   → Reduces 17 → 6 visible cards on page       │
+    │         │  │   Runs only when departure_window is set        │
+    │         │  │                                                 │
+    │         │  │ Layer 3: EXTRACTION (nova.act #2, ~19s)        │
+    │         │  │   Scrolls + reads all flight cards as JSON      │
+    │         │  │   → Returns raw flight array                    │
+    │         │  └─────────────────────────────────────────────────┘
+    │         │
+    │  MakeMyTrip / Ixigo:
     │  _filters_to_criteria(filters)
     │  → "departure between 06:00 and 11:59; sort by departure ascending"
     │  → nova.act(hint, schema={...})   ← readable hint for browser AI
@@ -294,7 +322,7 @@ agent.search(from_city, to_city, date, travel_class, filters=filters)
               │  normalizer.normalize(raw_flights, filters=filters)
               │
               │  Step 1: deduplicate same flight across platforms
-              │  Step 2: apply max_stops filter (direct int comparison)
+              │  Step 2: apply max_stops filter (safety net — URL already filtered)
               │  Step 3: apply departure_window (HH:MM → minutes, range check)
               │  Step 4: sort by filters["sort_by"]  ("departure" → sort by dep time)
               │
@@ -304,6 +332,46 @@ agent.search(from_city, to_city, date, travel_class, filters=filters)
               │  + user's saved cards + card_offers.json
               │
               ▼  { winner, all_results, reasoning }
+```
+
+### Cleartrip Agent — 3-Layer Filter Pipeline
+
+The Cleartrip agent uses a layered approach to minimize the number of flight cards the browser agent must scroll and extract:
+
+```
+Layer 1: URL ENCODING  (0s — happens at page load)
+  _build_search_url() in agent.py reads filters and config.yaml:
+    max_stops=0  →  &stops=0   (Cleartrip server returns only non-stop flights)
+    travel_class →  &class=Economy|Business|First  (via class_codes in config.yaml)
+  Result: page loads with fewer flights (e.g. 17 non-stop instead of 20+ with connections)
+
+Layer 2: PRE-FILTER ACT  (~26s — separate nova.act() call)
+  Only runs when departure_window is set in filters.
+  _departure_window_to_checkboxes() maps ["07:00","10:00"] → ["Early morning","Morning"]
+  using time_buckets defined in config.yaml.
+  The agent scrolls the sidebar and clicks those TIMINGS checkboxes.
+  Result: page shows only time-filtered flights (e.g. 6 instead of 17)
+  Prompt: instructions/pre_filter_timings.md (3 lines, minimal think overhead)
+
+Layer 3: EXTRACTION ACT  (~19s — main nova.act() call)
+  Two-layer prompt: site_adapter_cleartrip.md + extractor_prompt.md
+  Agent scrolls top-to-bottom, reads every flight card, returns JSON array.
+  No dedup/filter logic in the agent — FlightNormalizer handles that in Python.
+  Result: raw flight array (e.g. 6 flights)
+
+  After extraction, FlightNormalizer applies precise departure_window filtering:
+  6 raw → 4 final (e.g. only flights between 07:00 and 10:00)
+```
+
+**Performance progression (Bengaluru→Hyderabad, departure_window 07:00-10:00):**
+
+```
+Run 1 (baseline):  58.1s   20 raw → 4 filtered   No filters, 4 scrolls
+Run 6 (pre-filter): 44.5s   7 raw → 4 filtered   TIMINGS act() only
+Run 8 (URL+pf):    45.2s   6 raw → 4 filtered   stops=0 URL + TIMINGS act()
+Run 10 (current):   45.9s   6 raw → 4 filtered   stops=0 URL + tightened prompt + TIMINGS act()
+
+Improvement: 58.1s → 45.9s = 21% faster, zero data loss
 ```
 
 ### Why structured filters instead of free-text criteria?
@@ -418,6 +486,12 @@ backend/
 │   ├── flipkart/               package: agent.py + config.yaml
 │   ├── makemytrip/             package: agent.py + config.yaml
 │   ├── cleartrip/              package: agent.py + config.yaml + instructions/
+│   │   ├── config.yaml         city_codes, class_codes, time_buckets, step definitions
+│   │   ├── instructions/
+│   │   │   ├── site_adapter_cleartrip.md   Page structure + strict extraction rules
+│   │   │   ├── extractor_prompt.md         Scrolling strategy + fields to extract
+│   │   │   ├── pre_filter_timings.md       TIMINGS checkbox click instructions
+│   │   │   └── offers.md                   Offers extraction (Phase 3, optional)
 │   ├── goibibo/                package: agent.py + config.yaml (kept, not default)
 │   └── orchestrator.py         TravelOrchestrator + ProductOrchestrator
 │

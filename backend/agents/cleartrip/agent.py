@@ -80,6 +80,32 @@ def _load_time_buckets() -> list[tuple[str, int, int]]:
     return buckets
 
 
+def _build_search_url(
+    base_url: str,
+    from_code: str,
+    to_code: str,
+    date_ct: str,
+    travel_class: str = "economy",
+    filters: dict | None = None,
+) -> str:
+    """Build Cleartrip results URL, encoding stops and class as query params."""
+    class_codes = _CONFIG.get("class_codes") or {}
+    cls = class_codes.get(travel_class.lower().strip(), "Economy")
+
+    url = (
+        f"{base_url}/flights/results?"
+        f"from={from_code}&to={to_code}&depart_date={date_ct}"
+        f"&adults=1&childs=0&infants=0&class={cls}&intl=n&sd=1"
+    )
+
+    if filters:
+        max_stops = filters.get("max_stops")
+        if max_stops is not None:
+            url += f"&stops={int(max_stops)}"
+
+    return url
+
+
 def _departure_window_to_checkboxes(window: list[str] | None) -> list[str]:
     """Map a departure_window ["HH:MM", "HH:MM"] to Cleartrip TIMINGS checkbox labels.
 
@@ -133,11 +159,7 @@ class CleartripAgent:
         to_code = self._get_code(to_city)
         date_ct = self._format_date(date)
 
-        url = (
-            f"{base_url}/flights/results?"
-            f"from={from_code}&to={to_code}&depart_date={date_ct}"
-            f"&adults=1&childs=0&infants=0&class=Economy&intl=n&sd=1"
-        )
+        url = _build_search_url(base_url, from_code, to_code, date_ct, travel_class, filters)
 
         get_or_create_workflow_definition(workflow_name)
 

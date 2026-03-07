@@ -20,6 +20,11 @@ city_codes:
   chandigarh: IXC
   indore: IDR
 
+class_codes:
+  economy: Economy
+  business: Business
+  first: First
+
 time_buckets:
   - label: "Early morning"
     start: "00:00"
