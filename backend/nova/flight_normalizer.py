@@ -13,6 +13,7 @@ Responsibilities:
 No LLM calls — this is deterministic data cleaning.
 """
 
+import re
 import sys
 import os
 from typing import Optional

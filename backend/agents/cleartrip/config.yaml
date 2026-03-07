@@ -1,6 +1,5 @@
 workflow_name: "farewise-cleartrip"
 base_url: "https://www.cleartrip.com"
-default_criteria: "top 5 cheapest flights"
 max_steps_default: 50
 
 city_codes:
@@ -21,7 +20,28 @@ city_codes:
   chandigarh: IXC
   indore: IDR
 
+time_buckets:
+  - label: "Early morning"
+    start: "00:00"
+    end: "08:00"
+  - label: "Morning"
+    start: "08:00"
+    end: "12:00"
+  - label: "Afternoon"
+    start: "12:00"
+    end: "16:00"
+  - label: "Evening"
+    start: "16:00"
+    end: "20:00"
+  - label: "Night"
+    start: "20:00"
+    end: "24:00"
+
 steps:
+  pre_filter:
+    instruction_file: instructions/pre_filter_timings.md
+    max_steps: 10
+
   extraction:
     site_adapter_file: instructions/site_adapter_cleartrip.md
     extractor_file: instructions/extractor_prompt.md
@@ -37,7 +57,6 @@ steps:
           - duration
           - stops
           - price
-          - url
         additionalProperties: false
         properties:
           airline:
@@ -52,17 +71,12 @@ steps:
             pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
           duration:
             type: string
-            pattern: "^[0-9]+h [0-9]+m$"
           stops:
             type: integer
             minimum: 0
           price:
             type: integer
             minimum: 0
-          url:
-            type: string
-            # {{base_url}} is substituted at runtime (and regex-escaped) before schema is sent to Nova Act
-            pattern: "^{{base_url}}/.*"
     
   offers:
     instruction_file: instructions/offers.md

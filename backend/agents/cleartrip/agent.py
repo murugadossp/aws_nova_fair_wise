@@ -1,12 +1,13 @@
 """
 Cleartrip — Nova Act Agent
-Searches cleartrip.com for flights and returns top results.
-Instructions live in .md files under instructions/; config.yaml references them and holds schemas.
+Searches cleartrip.com for flights and returns ALL results.
+Filtering, sorting, and deduplication happen in FlightNormalizer (Python),
+not in the Nova Act prompt — the agent is a pure data reader.
+Instructions live in .md files under instructions/; config.yaml holds schemas.
 """
 
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -34,33 +35,6 @@ def _sub(s: str, **kwargs: str) -> str:
     return s
 
 
-def _fix_url_date_if_wrong(url: str, search_date: str) -> str:
-    """If the extracted URL contains a 4-digit year that does not match the search date, fix it.
-    Prevents hallucinated/wrong-year URLs from opening the wrong Cleartrip page."""
-    if not url or not search_date or len(search_date) < 4:
-        return url
-    search_year = search_date[:4]
-    # Match year in path (e.g. ...-07-Mar-2024? or .../2024/...)
-    year_in_url = re.search(r"\b(20[12]\d)\b", url)
-    if year_in_url and year_in_url.group(1) != search_year:
-        return url.replace(year_in_url.group(0), search_year, 1)
-    return url
-
-
-def _schema_substitute_base_url(schema: dict | list | str, base_url: str, escaped: str | None = None) -> dict | list | str:
-    """Deep-copy schema and replace {{base_url}} in any string value (e.g. url pattern).
-    Uses re.escape(base_url) so that the value is safe inside regex patterns."""
-    if escaped is None:
-        escaped = re.escape(base_url)
-    if isinstance(schema, dict):
-        return {k: _schema_substitute_base_url(v, base_url, escaped) for k, v in schema.items()}
-    if isinstance(schema, list):
-        return [_schema_substitute_base_url(x, base_url, escaped) for x in schema]
-    if isinstance(schema, str):
-        return schema.replace("{{base_url}}", escaped)
-    return schema
-
-
 def _get_instruction(step_cfg: dict) -> str:
     """Instruction text: site_adapter + extractor_prompt (two-layer prompt)."""
     site_file = step_cfg["site_adapter_file"]
@@ -72,6 +46,62 @@ def _get_instruction(step_cfg: dict) -> str:
     return f"{site_content}\n\n{extractor_content}"
 
 
+def _build_results(items: list[dict], search_url: str, from_city: str, to_city: str, date: str, travel_class: str) -> list[dict]:
+    """Convert raw extracted items into normalised result dicts with search page URL."""
+    results = []
+    for item in items:
+        results.append({
+            "platform": "cleartrip",
+            "from_city": from_city,
+            "to_city": to_city,
+            "date": date,
+            "class": travel_class,
+            **item,
+            "url": search_url,
+        })
+    return results
+
+
+def _hhmm_to_minutes(t: str) -> int:
+    h, m = t.strip().split(":")
+    return int(h) * 60 + int(m)
+
+
+def _load_time_buckets() -> list[tuple[str, int, int]]:
+    """Read time_buckets from config.yaml → [(label, start_min, end_min), ...]."""
+    raw = _CONFIG.get("time_buckets") or []
+    buckets = []
+    for b in raw:
+        buckets.append((
+            b["label"],
+            _hhmm_to_minutes(b["start"]),
+            _hhmm_to_minutes(b["end"]),
+        ))
+    return buckets
+
+
+def _departure_window_to_checkboxes(window: list[str] | None) -> list[str]:
+    """Map a departure_window ["HH:MM", "HH:MM"] to Cleartrip TIMINGS checkbox labels.
+
+    Selects every bucket that overlaps with the inclusive [lo, hi] window.
+    Returns [] if no window or window covers all buckets (no pre-filter needed).
+    """
+    if not window or len(window) != 2:
+        return []
+    try:
+        lo = _hhmm_to_minutes(window[0])
+        hi = _hhmm_to_minutes(window[1])
+    except (ValueError, AttributeError):
+        return []
+    buckets = _load_time_buckets()
+    if not buckets:
+        return []
+    labels = [label for label, bstart, bend in buckets if lo < bend and bstart <= hi]
+    if len(labels) == len(buckets):
+        return []
+    return labels
+
+
 class CleartripAgent:
 
     def _get_code(self, city: str) -> str:
@@ -80,18 +110,8 @@ class CleartripAgent:
 
     @staticmethod
     def _filters_to_criteria(filters: dict | None) -> str:
-        """Convert structured filters dict → readable criteria hint for Nova Act."""
-        if not filters:
-            return "top 5 cheapest flights sorted by price ascending"
-        parts = []
-        dep_window = filters.get("departure_window")
-        if dep_window and len(dep_window) == 2:
-            parts.append(f"departure between {dep_window[0]} and {dep_window[1]}")
-        if filters.get("max_stops") == 0:
-            parts.append("non-stop flights only")
-        sort_by = filters.get("sort_by", "price")
-        parts.append(f"sort by {sort_by} ascending")
-        return "; ".join(parts)
+        """No filtering in Nova Act — FlightNormalizer handles it in Python."""
+        return "all available flights"
 
     def search(
         self,
@@ -102,8 +122,8 @@ class CleartripAgent:
         filters: dict | None = None,
         fetch_offers: bool = False,
     ) -> list[dict] | dict:
-        """Run extraction first (get flight list), then optionally run offers step later in the same session."""
-        log.info("Searching Cleartrip: %s→%s date=%s class=%s filters=%s fetch_offers=%s", from_city, to_city, date, travel_class, filters, fetch_offers)
+        """Extract ALL flights, then optionally check offers in the same session."""
+        log.info("Searching Cleartrip: %s→%s date=%s class=%s fetch_offers=%s", from_city, to_city, date, travel_class, fetch_offers)
 
         os.environ.pop("NOVA_ACT_API_KEY", None)
 
@@ -132,16 +152,34 @@ class CleartripAgent:
                 with NovaAct(workflow=wf, starting_page=url, headless=headless, tty=False) as nova:
                     log.debug("Nova Act browser started for cleartrip.com (workflow=%s)", workflow_name)
 
+                    # ── Pre-filter: click TIMINGS checkboxes if departure_window is set ──
+                    checkboxes = _departure_window_to_checkboxes(
+                        (filters or {}).get("departure_window"),
+                    )
+                    prefilter_cfg = _CONFIG["steps"].get("pre_filter")
+                    if checkboxes and prefilter_cfg:
+                        pf_path = _AGENT_DIR / prefilter_cfg["instruction_file"]
+                        pf_instruction = _sub(
+                            pf_path.read_text(encoding="utf-8").strip(),
+                            from_city=from_city,
+                            checkboxes=", ".join(f'"{cb}"' for cb in checkboxes),
+                        )
+                        pf_max_steps = prefilter_cfg.get("max_steps", 10)
+                        log.info("Pre-filter: clicking TIMINGS %s for %s", checkboxes, from_city)
+                        try:
+                            nova.act(pf_instruction, max_steps=pf_max_steps)
+                            log.info("Pre-filter applied, proceeding with extraction")
+                        except Exception as pf_err:
+                            log.warning("Pre-filter failed (%s), extracting unfiltered page", pf_err)
+
+                    # ── Extraction: read all visible flights ──
                     extraction_cfg = _CONFIG["steps"]["extraction"]
                     extraction_instruction = _sub(
                         _get_instruction(extraction_cfg),
                         criteria=criteria,
-                        base_url=base_url,
                     )
-                    extraction_schema = _schema_substitute_base_url(
-                        extraction_cfg["schema"],
-                        base_url,
-                    )
+                    extraction_schema = extraction_cfg["schema"]
+
                     extracted = nova.act(
                         extraction_instruction,
                         max_steps=max_steps,
@@ -153,23 +191,12 @@ class CleartripAgent:
                         items = extracted.parsed_response
                     elif isinstance(extracted, list):
                         items = extracted
+
                     if items is not None:
-                        for item in items[:5]:
-                            url_val = (item.get("url") or "").strip()
-                            if url_val and not url_val.startswith("http"):
-                                url_val = base_url + (url_val if url_val.startswith("/") else "/" + url_val)
-                            url_val = _fix_url_date_if_wrong(url_val, date)
-                            results.append({
-                                "platform": "cleartrip",
-                                "from_city": from_city,
-                                "to_city": to_city,
-                                "date": date,
-                                "class": travel_class,
-                                **{**item, "url": url_val or item.get("url", "")},
-                            })
+                        results = _build_results(items, url, from_city, to_city, date, travel_class)
                         log.info("Cleartrip returned %d flights for %s→%s on %s", len(results), from_city, to_city, date)
 
-                        # First get the list; then optionally run offers step later in the same session.
+                        # Offers step: same browser session, agent reads offers from the open page
                         if results and fetch_offers:
                             offers_cfg = _CONFIG["steps"].get("offers")
                             if offers_cfg:
@@ -198,7 +225,7 @@ class CleartripAgent:
                         log.warning("Cleartrip extraction returned unexpected type: %s", type(extracted))
             return results
         except Exception as e:
-            # If the SDK rejected the response (e.g. schema validation) but the model returned valid JSON, try to use it
+            # If the SDK rejected the response but the model returned valid JSON, try to recover
             if isinstance(e, ActInvalidModelGenerationError):
                 raw = getattr(e, "raw_response", None)
                 if isinstance(raw, str):
@@ -207,21 +234,7 @@ class CleartripAgent:
                         try:
                             data = json.loads(raw)
                             if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict) and "airline" in data[0]:
-                                base_url = _CONFIG["base_url"]
-                                results = []
-                                for item in data[:5]:
-                                    url_val = (item.get("url") or "").strip()
-                                    if url_val and not url_val.startswith("http"):
-                                        url_val = base_url + (url_val if url_val.startswith("/") else "/" + url_val)
-                                    url_val = _fix_url_date_if_wrong(url_val, date)
-                                    results.append({
-                                        "platform": "cleartrip",
-                                        "from_city": from_city,
-                                        "to_city": to_city,
-                                        "date": date,
-                                        "class": travel_class,
-                                        **{**item, "url": url_val or item.get("url", "")},
-                                    })
+                                results = _build_results(data, url, from_city, to_city, date, travel_class)
                                 log.info(
                                     "Cleartrip: recovered %d flights from raw_response after ActInvalidModelGenerationError",
                                     len(results),
