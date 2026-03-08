@@ -71,6 +71,7 @@ Return ONLY this JSON — no explanation, no markdown:
   }},
   "filters": {{
     "departure_window": ["HH:MM", "HH:MM"] or null,
+    "arrival_window": ["HH:MM", "HH:MM"] or null,
     "max_stops": 0 (default, non-stop) | 1 | 2 | null for any,
     "sort_by": "price | departure | duration  (default price)"
   }},
@@ -78,7 +79,8 @@ Return ONLY this JSON — no explanation, no markdown:
 }}
 
 Rules:
-- departure_window: set only if user mentions a time window (e.g. "morning" → ["06:00","11:59"], "before 10am" → ["00:00","09:59"], "after 6pm" → ["18:00","23:59"])
+- departure_window: set only if user mentions departure time (e.g. "morning flight" → ["06:00","11:59"], "before 10am" → ["00:00","09:59"], "after 6pm" → ["18:00","23:59"])
+- arrival_window: set only if user mentions arrival/landing time (e.g. "land by evening", "reach by 8pm" → ["18:00","23:59"])
 - max_stops: default 0 (non-stop). Set null only if user explicitly asks for "connecting", "with stops", "1 stop", "2 stops", or similar
 - agents: default all three; use subset only if user names a specific platform
 - sort_by: "departure" if user asks to sort by time, else "price\""""
@@ -100,6 +102,7 @@ Rules:
             },
             "filters": route.get("filters") or {
                 "departure_window": None,
+                "arrival_window":   None,
                 "max_stops":        0,
                 "sort_by":          "price",
             },
@@ -192,8 +195,9 @@ Rules:
                 },
                 "filters": {
                     "departure_window": raw_filters.get("departure_window"),      # ["HH:MM","HH:MM"] | null
+                    "arrival_window":   raw_filters.get("arrival_window"),        # ["HH:MM","HH:MM"] | null
                     "max_stops":        raw_filters.get("max_stops", 0),          # 0 (default) | 1 | 2 | null
-                    "sort_by":          raw_filters.get("sort_by", "price"),      # "price"|"departure"|"duration"
+                    "sort_by":          raw_filters.get("sort_by", "price"),     # "price"|"departure"|"duration"
                 },
                 "agents": agents,
             }
@@ -211,6 +215,6 @@ Rules:
             # Last resort: empty plan with all agents, no filters
             return {
                 "route":   {"from": "", "to": "", "date": "", "class": "economy"},
-                "filters": {"departure_window": None, "max_stops": 0, "sort_by": "price"},
+                "filters": {"departure_window": None, "arrival_window": None, "max_stops": 0, "sort_by": "price"},
                 "agents":  ALL_AGENTS,
             }

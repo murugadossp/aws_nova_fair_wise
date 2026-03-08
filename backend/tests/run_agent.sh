@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # run_agent.sh — Run FareWise agents / Nova model tests
 # Usage: ./tests/run_agent.sh <agent|group> [-h|--help]
+# Stdout and stderr are teed to logs/<input>_log.txt (e.g. cleartrip_log.txt).
 
 set -euo pipefail
 
@@ -8,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV="$BACKEND_DIR/.venv/bin/activate"
 TESTS="$SCRIPT_DIR"
+LOG_DIR="${LOG_DIR:-$BACKEND_DIR/logs}"
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 BOLD='\033[1m'
@@ -50,9 +52,10 @@ usage() {
   echo ""
   echo -e "  ${CYAN}Examples:${NC}"
   echo -e "    ./tests/run_agent.sh amazon"
-  echo -e "    ./tests/run_agent.sh ixigo"
+  echo -e "    ./tests/run_agent.sh cleartrip"
   echo -e "    ./tests/run_agent.sh travel"
   echo -e "    ./tests/run_agent.sh all"
+  echo -e "  ${CYAN}Logging:${NC} stdout/stderr are written to ${YELLOW}logs/<input>_log.txt${NC} (e.g. cleartrip_log.txt)."
   echo ""
 }
 
@@ -107,6 +110,13 @@ if [ $# -eq 0 ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   usage
   exit 0
 fi
+
+INPUT="${1:-unknown}"
+LOG_FILE="$LOG_DIR/${INPUT}_log.txt"
+mkdir -p "$LOG_DIR"
+# Tee stdout and stderr to log file (and keep printing to terminal)
+exec 1> >(tee "$LOG_FILE") 2>&1
+echo -e "${DIM}Log: $LOG_FILE${NC}"
 
 activate_venv
 

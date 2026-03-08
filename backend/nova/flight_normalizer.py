@@ -111,8 +111,9 @@ def _apply_filters(flights: list[dict], filters: dict) -> list[dict]:
 
     Supported filter keys:
       departure_window: ["HH:MM", "HH:MM"]  — inclusive departure time range
-      max_stops:        int                  — 0 = non-stop only
-      sort_by:          "price"|"departure"|"duration"  — final sort order (applied in normalize)
+      arrival_window:   ["HH:MM", "HH:MM"]   — inclusive arrival/landing time range
+      max_stops:       int                  — 0 = non-stop only
+      sort_by:         "price"|"departure"|"duration"  — final sort order (applied in normalize)
     """
     result = flights
 
@@ -147,6 +148,29 @@ def _apply_filters(flights: list[dict], filters: dict) -> list[dict]:
                 log.warning(
                     "No flights in departure window %s–%s; ignoring filter",
                     window[0], window[1],
+                )
+
+    # ── arrival_window ────────────────────────────────────────────────────────
+    arr_window = filters.get("arrival_window")
+    if arr_window and len(arr_window) == 2:
+        lo = _parse_hhmm(arr_window[0])
+        hi = _parse_hhmm(arr_window[1])
+        if lo is not None and hi is not None:
+            filtered = [
+                f for f in result
+                if (arr := _parse_hhmm(f.get("arrival", ""))) is not None
+                and lo <= arr <= hi
+            ]
+            if filtered:
+                log.info(
+                    "Filter arrival_window %s–%s: %d → %d flights",
+                    arr_window[0], arr_window[1], len(result), len(filtered),
+                )
+                result = filtered
+            else:
+                log.warning(
+                    "No flights in arrival window %s–%s; ignoring filter",
+                    arr_window[0], arr_window[1],
                 )
 
     return result

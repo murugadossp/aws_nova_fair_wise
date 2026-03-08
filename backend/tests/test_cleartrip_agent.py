@@ -13,15 +13,23 @@ import json
 import os
 import sys
 from datetime import date, timedelta
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import yaml
 from dotenv import load_dotenv
 load_dotenv()
 
 from logger import add_agent_test_file_handler, get_logger
 from agents.cleartrip import CleartripAgent
 from nova.flight_normalizer import FlightNormalizer
+
+# Load agent config for offers_top_n (supports 1-flight testing)
+_CLEARTRIP_CONFIG_PATH = Path(__file__).resolve().parent.parent / "agents" / "cleartrip" / "config.yaml"
+with open(_CLEARTRIP_CONFIG_PATH, encoding="utf-8") as _f:
+    _CLEARTRIP_CONFIG = yaml.safe_load(_f)
+OFFERS_TOP_N = _CLEARTRIP_CONFIG.get("offers_top_n", 2)
 
 log = get_logger(__name__)
 
@@ -133,7 +141,8 @@ def validate_offers(raw: dict | list, filters: dict | None = None, filtered_flig
 
     offers = raw.get("offers_analysis", [])
     assert_ok(len(offers) > 0, "Phase 3: offers_analysis is empty — no flights processed")
-    assert_ok(len(offers) <= 2, "Phase 3: offers_analysis should have at most 2 entries (offers_top_n=2)")
+    assert_ok(len(offers) <= OFFERS_TOP_N,
+              f"Phase 3: offers_analysis should have at most {OFFERS_TOP_N} entries (offers_top_n={OFFERS_TOP_N})")
 
     # Offers must be for flights from the filtered list (respecting departure_window / max_stops)
     if filtered_flights:
@@ -180,9 +189,17 @@ def validate_offers(raw: dict | list, filters: dict | None = None, filtered_flig
 
         coupons = entry.get("coupons", [])
         fb = entry.get("fare_breakdown", {})
-        log.info("  [%d] %s %s  original=₹%d  coupons=%d  fare_breakdown=%s%s",
+        best_after = entry.get("best_price_after_coupon")
+        if best_after is not None:
+            assert_ok(isinstance(best_after, int) and best_after >= 0,
+                      f"offers_analysis[{i}].best_price_after_coupon must be non-negative int, got {type(best_after).__name__!r}")
+            if coupons:
+                assert_ok(best_after == min(c["price_after_coupon"] for c in coupons),
+                          f"offers_analysis[{i}].best_price_after_coupon should be min(price_after_coupon)")
+        log.info("  [%d] %s %s  original=₹%d  coupons=%d  best_after=₹%s  fare_breakdown=%s%s",
                  i + 1, entry.get("airline"), entry.get("flight_number"),
                  entry.get("original_price", 0), len(coupons),
+                 str(best_after) if best_after is not None else "—",
                  "yes" if fb else "empty",
                  f"  error={entry['error']}" if "error" in entry else "")
 
@@ -195,9 +212,10 @@ def validate_offers(raw: dict | list, filters: dict | None = None, filtered_flig
                           f"offers_analysis[{i}].coupons[{j}] missing field: {field}")
             assert_ok(isinstance(c["discount"], int),
                       f"coupon[{j}] discount must be int")
-            assert_ok(c["price_after_coupon"] == entry["original_price"] - c["discount"],
+            expected_after = max(0, entry["original_price"] - c["discount"])
+            assert_ok(c["price_after_coupon"] == expected_after,
                       f"coupon[{j}] price_after_coupon mismatch: "
-                      f"{c['price_after_coupon']} != {entry['original_price']} - {c['discount']}")
+                      f"{c['price_after_coupon']} != max(0, original_price - discount)")
             log.info("    coupon: %s — %s  discount=₹%d  after=₹%d",
                      c.get("code"), c.get("description", "")[:50],
                      c.get("discount", 0), c.get("price_after_coupon", 0))
@@ -284,10 +302,15 @@ def test_cleartrip_search(from_city="delhi", to_city="mumbai", days_from_now=7, 
 
     # ── Phase 3: Offers — Book → fare+coupons → traveler → fare breakdown ─
     if RUN_PHASE_3:
-        log.info("Phase 3: Validating offers for top 2 cheapest flights (%d entries)",
-                 len(offers_analysis))
+        log.info("Phase 3: Validating offers for top %d flight(s) (%d entries)", OFFERS_TOP_N, len(offers_analysis))
         validate_offers(raw, filters=filters, filtered_flights=filtered if RUN_PHASE_2 and filters else None)
-        log.info("Phase 3 PASSED (%d flights with coupon data)", len(offers_analysis))
+        errors = sum(1 for o in offers_analysis if "error" in o)
+        fallbacks = sum(1 for o in offers_analysis if o.get("fare_breakdown", {}).get("source") == "fallback")
+        if errors or fallbacks:
+            log.warning("Phase 3 PARTIAL PASS (%d offers, %d errors, %d fallback fares)",
+                        len(offers_analysis), errors, fallbacks)
+        else:
+            log.info("Phase 3 PASSED (%d flights with full coupon+fare data)", len(offers_analysis))
     else:
         log.info("Phase 3 SKIPPED (set RUN_PHASE_3 = True to enable)")
 
