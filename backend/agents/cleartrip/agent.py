@@ -19,6 +19,7 @@ import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from time import perf_counter
 from typing import Callable
 
 import yaml
@@ -44,6 +45,11 @@ def _sub(s: str, **kwargs: str) -> str:
     for k, v in kwargs.items():
         s = s.replace(f"{{{{{k}}}}}", v)
     return s
+
+
+def _elapsed_ms(start: float) -> int:
+    """Return elapsed milliseconds since `start` from perf_counter()."""
+    return int((perf_counter() - start) * 1000)
 
 
 def _get_instruction(step_cfg: dict) -> str:
@@ -402,6 +408,7 @@ class CleartripAgent:
             flight_number = flight["flight_number"]
             price = flight["price"]
             log.info("Harvest [%d/%d]: %s %s ₹%d", idx + 1, len(targets), airline, flight_number, price)
+            harvest_started = perf_counter()
             try:
                 if idx > 0:
                     nova.page.goto(search_url)
@@ -419,7 +426,16 @@ class CleartripAgent:
                     pass
                 itinerary_url = nova.page.url
                 if itinerary_url and itinerary_url.startswith("http"):
-                    harvested.append({"flight": flight, "itinerary_url": itinerary_url})
+                    harvested.append({
+                        "flight": flight,
+                        "itinerary_url": itinerary_url,
+                        "telemetry": {
+                            "flight_number": flight_number,
+                            "airline": airline,
+                            "harvest_ms": _elapsed_ms(harvest_started),
+                            "itinerary_url": itinerary_url,
+                        },
+                    })
                     log.info("Harvest [%d/%d]: %s %s → %s", idx + 1, len(targets), airline, flight_number, itinerary_url[:60])
                     if on_url_harvested:
                         on_url_harvested(idx, flight, itinerary_url)
@@ -444,6 +460,7 @@ class CleartripAgent:
         airline = flight_info.get("airline", "")
         flight_number = flight_info.get("flight_number", "")
         price = int(flight_info.get("price", 0))
+        session_started = perf_counter()
         result = {
             "flight_number": flight_number,
             "airline": airline,
@@ -453,6 +470,12 @@ class CleartripAgent:
             "fare_breakdown": {},
             "best_price_after_coupon": None,
             "additional_urls": {"itinerary": itinerary_url, "payment": ""},
+            "telemetry": {
+                "workflow_name": workflow_name,
+                "model_id": "nova-act-latest",
+                "starting_page": itinerary_url,
+                "timings_ms": {},
+            },
         }
         try:
             get_or_create_workflow_definition(workflow_name)
@@ -463,6 +486,7 @@ class CleartripAgent:
                     booking_fare_cfg = _CONFIG["steps"].get("extract_fare_summary_booking")
                     if booking_fare_cfg:
                         try:
+                            fare_started = perf_counter()
                             inst = _get_single_instruction(booking_fare_cfg)
                             out = nova.act(
                                 inst,
@@ -494,14 +518,18 @@ class CleartripAgent:
                                         "convenience_fee": conv,
                                         "total_fare": total,
                                     }
+                            result["telemetry"]["timings_ms"]["fare_summary_ms"] = _elapsed_ms(fare_started)
                         except Exception as e:
                             log.debug("Fare summary extraction failed for %s %s: %s", airline, flight_number, e)
                     coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
                     if coupons_cfg:
+                        coupon_started = perf_counter()
                         _run_coupon_extraction(nova, coupons_cfg, price, result)
+                        result["telemetry"]["timings_ms"]["coupon_ms"] = _elapsed_ms(coupon_started)
         except Exception as e:
             log.warning("Parallel extract failed for %s %s: %s", airline, flight_number, e)
             result["error"] = str(e)
+        result["telemetry"]["timings_ms"]["session_total_ms"] = _elapsed_ms(session_started)
         return result
 
     def search(
@@ -515,6 +543,7 @@ class CleartripAgent:
     ) -> list[dict] | dict:
         """Extract ALL flights, then optionally check offers in the same session."""
         log.info("Searching Cleartrip: %s→%s date=%s class=%s fetch_offers=%s", from_city, to_city, date, travel_class, fetch_offers)
+        search_started = perf_counter()
 
         # ── Phase 1: Resolve city codes, build search URL, open Nova Act browser session ──────────
         os.environ.pop("NOVA_ACT_API_KEY", None)
@@ -526,6 +555,14 @@ class CleartripAgent:
         date_ct = self._format_date(date)
 
         url = _build_search_url(base_url, from_code, to_code, date_ct, travel_class, filters)
+        telemetry = {
+            "workflow_name": workflow_name,
+            "model_id": "nova-act-latest",
+            "search_url": url,
+            "timings_ms": {},
+            "harvest": [],
+            "offer_sessions": [],
+        }
 
         get_or_create_workflow_definition(workflow_name)
 
@@ -577,11 +614,13 @@ class CleartripAgent:
                         )
                         log.info("Combined filter+extract: departure=%s arrival=%s (single act)", dep_checkboxes, arr_checkboxes)
                         try:
+                            phase1_started = perf_counter()
                             extracted = nova.act(
                                 combined_instruction,
                                 max_steps=max_steps,
                                 schema=extraction_schema,
                             )
+                            telemetry["timings_ms"]["phase1_extract_ms"] = _elapsed_ms(phase1_started)
                         except Exception as combined_err:
                             log.warning("Combined filter+extract failed (%s), falling back to two-act approach", combined_err)
                             extracted = None
@@ -609,11 +648,13 @@ class CleartripAgent:
                             _get_instruction(extraction_cfg),
                             criteria=criteria,
                         )
+                        phase1_started = perf_counter()
                         extracted = nova.act(
                             extraction_instruction,
                             max_steps=max_steps,
                             schema=extraction_schema,
                         )
+                        telemetry["timings_ms"]["phase1_extract_ms"] = _elapsed_ms(phase1_started)
 
                     items = None
                     if isinstance(extracted, ActGetResult) and isinstance(getattr(extracted, "parsed_response", None), list):
@@ -642,12 +683,15 @@ class CleartripAgent:
                                     # Click Book on each target flight to land on its itinerary page and capture the
                                     # URL. All URLs are collected before any parallel work begins so both sessions
                                     # can start at the same time.
+                                    harvest_started = perf_counter()
                                     harvested = self._harvest_itinerary_urls(
                                         nova,
                                         filtered_items,
                                         url,
                                         on_url_harvested=None,
                                     )
+                                    telemetry["timings_ms"]["harvest_total_ms"] = _elapsed_ms(harvest_started)
+                                    telemetry["harvest"] = [h.get("telemetry", {}) for h in harvested]
                                     log.info("Harvest complete: %d/%d URLs captured", len(harvested), top_n)
                                     for h_idx, h in enumerate(harvested):
                                         log.info("  Harvest [%d]: %s %s → %s",
@@ -660,6 +704,7 @@ class CleartripAgent:
                                     offers_analysis = []
                                     if harvested:
                                         headless = os.environ.get("NOVA_ACT_HEADLESS", "true").lower() == "true"
+                                        parallel_started = perf_counter()
                                         with ThreadPoolExecutor(max_workers=max_workers) as executor:
                                             futures = {
                                                 executor.submit(
@@ -689,14 +734,39 @@ class CleartripAgent:
                                                         "fare_breakdown": {},
                                                         "best_price_after_coupon": None,
                                                         "additional_urls": {"itinerary": h.get("itinerary_url", ""), "payment": ""},
+                                                        "telemetry": {
+                                                            "workflow_name": workflow_name,
+                                                            "model_id": "nova-act-latest",
+                                                            "starting_page": h.get("itinerary_url", ""),
+                                                            "timings_ms": {},
+                                                        },
                                                         "error": str(e),
                                                     })
+                                        telemetry["timings_ms"]["offer_parallel_wall_clock_ms"] = _elapsed_ms(parallel_started)
                                         # Preserve order by harvested (flight 1, flight 2)
                                         key = lambda o: (o.get("airline"), o.get("flight_number"))
                                         harvested_keys = [(h["flight"]["airline"], h["flight"]["flight_number"]) for h in harvested]
                                         offers_analysis.sort(key=lambda o: harvested_keys.index(key(o)) if key(o) in harvested_keys else 999)
+                                        telemetry["offer_sessions"] = [
+                                            {
+                                                "flight_number": offer.get("flight_number"),
+                                                "airline": offer.get("airline"),
+                                                "starting_page": (offer.get("telemetry") or {}).get("starting_page", ""),
+                                                "timings_ms": (offer.get("telemetry") or {}).get("timings_ms", {}),
+                                            }
+                                            for offer in offers_analysis
+                                        ]
                                 self._apply_convenience_fee_from_first(offers_analysis)
+                                telemetry["timings_ms"]["total_search_ms"] = _elapsed_ms(search_started)
+                                log.info(
+                                    "Cleartrip telemetry: total=%dms phase1=%dms harvest=%dms parallel=%dms",
+                                    telemetry["timings_ms"].get("total_search_ms", 0),
+                                    telemetry["timings_ms"].get("phase1_extract_ms", 0),
+                                    telemetry["timings_ms"].get("harvest_total_ms", 0),
+                                    telemetry["timings_ms"].get("offer_parallel_wall_clock_ms", 0),
+                                )
                                 return {
+                                    "telemetry": telemetry,
                                     "flights": results,
                                     "offers_analysis": offers_analysis,
                                 }

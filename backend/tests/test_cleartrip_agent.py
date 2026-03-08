@@ -113,6 +113,41 @@ def log_phase1_candidate_warnings(flights: list[dict], filters: dict | None):
         log.info("Phase 1 warnings: none (all candidate departures fit selected Cleartrip buckets %s)", selected_dep_labels)
 
 
+def log_telemetry_summary(telemetry: dict | None):
+    """Log top-level telemetry near the start of the test output."""
+    if not isinstance(telemetry, dict):
+        return
+    timings = telemetry.get("timings_ms", {})
+    log.info(
+        "Telemetry: total=%sms phase1=%sms harvest=%sms parallel=%sms workflow=%s model=%s",
+        timings.get("total_search_ms", "—"),
+        timings.get("phase1_extract_ms", "—"),
+        timings.get("harvest_total_ms", "—"),
+        timings.get("offer_parallel_wall_clock_ms", "—"),
+        telemetry.get("workflow_name", "—"),
+        telemetry.get("model_id", "—"),
+    )
+    for i, harvest in enumerate(telemetry.get("harvest", []), 1):
+        log.info(
+            "  Harvest telemetry [%d]: %s %s  harvest_ms=%s",
+            i,
+            harvest.get("airline"),
+            harvest.get("flight_number"),
+            harvest.get("harvest_ms", "—"),
+        )
+    for i, session in enumerate(telemetry.get("offer_sessions", []), 1):
+        st = session.get("timings_ms", {})
+        log.info(
+            "  Offer session [%d]: %s %s  fare_ms=%s coupon_ms=%s total_ms=%s",
+            i,
+            session.get("airline"),
+            session.get("flight_number"),
+            st.get("fare_summary_ms", "—"),
+            st.get("coupon_ms", "—"),
+            st.get("session_total_ms", "—"),
+        )
+
+
 # ── Phase 1 validation ─────────────────────────────────────
 
 def validate_flight_schema(flights: list[dict]):
@@ -321,11 +356,15 @@ def test_cleartrip_search(from_city="delhi", to_city="mumbai", days_from_now=7, 
 
     # ── Phase 1: Validate raw extraction ────────────────────────
     if isinstance(raw, dict) and "flights" in raw:
+        telemetry = raw.get("telemetry", {})
         results = raw["flights"]
         offers_analysis = raw.get("offers_analysis", [])
     else:
+        telemetry = {}
         results = raw if isinstance(raw, list) else []
         offers_analysis = []
+
+    log_telemetry_summary(telemetry)
 
     log.info("Phase 1: Agent extracted %d candidate flights (non-authoritative)", len(results))
     for i, r in enumerate(results, 1):
@@ -375,7 +414,7 @@ def test_cleartrip_search(from_city="delhi", to_city="mumbai", days_from_now=7, 
 
     log.info("test_cleartrip_search PASSED  (candidate=%d, filtered=%d, offers=%d)",
              len(results), len(filtered), len(offers_analysis))
-    return {"raw": results, "filtered": filtered, "offers_analysis": offers_analysis}
+    return {"telemetry": telemetry, "raw": results, "filtered": filtered, "offers_analysis": offers_analysis}
 
 
 if __name__ == "__main__":
