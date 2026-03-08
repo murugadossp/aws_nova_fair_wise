@@ -1,7 +1,13 @@
-## PHASE 1: APPLY TIME FILTER
+## PHASE 1: APPLY TIME FILTERS
 
-In the TIMINGS section on the left sidebar, under "Taking off from {{from_city}}", click these checkboxes: {{checkboxes}}
-Do NOT click any other filters or checkboxes.
+As soon as any flight cards appear on the results page, IMMEDIATELY scroll the LEFT sidebar downward to find the **TIMINGS** section. Do NOT wait for all results to load — scroll the left sidebar NOW.
+
+Apply only the sections below that list checkboxes (same time slots: Early morning, Morning, Afternoon, Evening, Night). If a section says "—" or is empty, skip it.
+
+- **Departure:** Under "Taking off from {{from_city}}" in the TIMINGS section, click these checkboxes: {{departure_checkboxes}}
+- **Arrival:** Under "Landing in {{to_city}}" in the TIMINGS section, click these checkboxes: {{arrival_checkboxes}}
+
+Do NOT click any other filters or checkboxes. Do NOT scroll the main results area yet.
 
 ## PHASE 2: EXTRACT ALL FLIGHTS
 

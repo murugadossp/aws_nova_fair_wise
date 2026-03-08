@@ -74,7 +74,7 @@ Additional keys:
 
 - **`wait`** — Single instruction run once before extraction. Can be inline (`instruction`) or from a file (`instruction_file`, e.g. `instructions/wait.md`).
 - **`extraction`** — Instruction and `schema` (JSON Schema for the flight array). Cleartrip uses a **two-layer prompt**: `site_adapter_file` (stable Cleartrip UI knowledge) + `extractor_file` (task with `{{criteria}}`, `{{base_url}}`). The agent loads both and concatenates them at runtime so the extraction prompt stays small and site knowledge is reusable.
-- **`offers`** (Cleartrip only) — Optional second act: instruction (e.g. `instruction_file: instructions/offers.md`) and `schema` for offers + suggestion. Workflow is **list first, offers later**: extraction always runs first to get the flight list; the offers step runs only when `fetch_offers=True` and after extraction has succeeded. When offers run, the agent returns `{ "flights", "offers_analysis", "suggestion" }`; otherwise it returns the list only.
+- **Offers** (Cleartrip only) — When `fetch_offers=True`, after extraction the agent harvests itinerary URLs (combined `book_then_continue` act) and can run parallel or sequential offer extraction (e.g. `select_fare_extract_coupons`, skip add-ons, fill traveler, extract fare breakdown). Returns `{ "flights", "offers_analysis" }` when offers are requested.
 
 ### Two-layer extraction (Cleartrip)
 
