@@ -184,8 +184,10 @@ def validate_offers(raw: dict | list, filters: dict | None = None, filtered_flig
 
         assert_ok(isinstance(entry["original_price"], int),
                   f"offers_analysis[{i}] original_price must be int")
-        assert_ok(entry["fare_type"] == "VALUE",
-                  f"offers_analysis[{i}] fare_type must be VALUE, got {entry['fare_type']}")
+        assert_ok(
+            isinstance(entry["fare_type"], str) and len((entry["fare_type"] or "").strip()) > 0,
+            f"offers_analysis[{i}] fare_type must be a non-empty string, got {entry.get('fare_type')!r}",
+        )
 
         coupons = entry.get("coupons", [])
         fb = entry.get("fare_breakdown", {})

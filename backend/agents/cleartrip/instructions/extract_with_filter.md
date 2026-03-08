@@ -30,4 +30,6 @@ For each card extract these fields (all from the SAME card):
 - stops: integer (0 for non-stop, 1 for 1 stop)
 - price: integer price in INR (remove ₹ and commas — e.g. ₹8,760 → 8760)
 
+**Strict:** You must scroll the main results (steps 1–4 above) to find all flight cards, then return every flight you saw during that scroll-through. Include only flights that were actually visible on screen at some point during your scroll of the filtered results — do not add any flight from memory, a different viewport state, or inference. If you did not see a flight card while scrolling the results, do not include it.
+
 Return ONLY a valid JSON array of all flights. No markdown or explanation.

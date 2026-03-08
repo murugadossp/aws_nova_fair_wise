@@ -32,6 +32,7 @@ with open(_AGENT_DIR / "config.yaml", encoding="utf-8") as _f:
 
 
 def _sub(s: str, **kwargs: str) -> str:
+    """Substitute `{{key}}` placeholders in a template string with provided values."""
     for k, v in kwargs.items():
         s = s.replace(f"{{{{{k}}}}}", v)
     return s
@@ -54,6 +55,63 @@ def _get_single_instruction(step_cfg: dict) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
+def _normalize_coupons(coupon_list: list[dict]) -> list[dict]:
+    """Fix currency symbol in coupon descriptions.
+    Nova Act occasionally returns U+20B5 (₵ Cedi) instead of U+20B9 (₹ Rupee)
+    when rendering Indian-locale pages in headless mode. Amounts are always correct.
+    """
+    for c in coupon_list:
+        if "description" in c and isinstance(c["description"], str):
+            c["description"] = c["description"].replace("\u20b5", "\u20b9")
+    return coupon_list
+
+
+def _run_coupon_extraction(nova, coupons_cfg: dict, price: int, result: dict) -> None:
+    """Run the 'extract_coupons_from_booking_page' act step and populate `result`.
+
+    Reads coupons from the currently open booking/itinerary page, normalises the
+    currency symbol (single normalization point for the whole pipeline), computes
+    price_after_coupon for each coupon, and stores coupons + best_price_after_coupon
+    in `result`. Modifies `result` in place.
+    """
+    inst = _get_single_instruction(coupons_cfg)
+    out = nova.act(inst, max_steps=coupons_cfg.get("max_steps", 12), schema=coupons_cfg.get("schema"))
+    coupons = (
+        getattr(out, "parsed_response", None)
+        if isinstance(out, ActGetResult)
+        else (out if isinstance(out, list) else None)
+    )
+    coupon_list = _normalize_coupons(coupons or [])
+    for c in coupon_list:
+        c["price_after_coupon"] = max(0, price - c.get("discount", 0))
+    result["coupons"] = coupon_list
+    if coupon_list:
+        result["best_price_after_coupon"] = min(c["price_after_coupon"] for c in coupon_list)
+
+
+def _dedup_raw_items(items: list[dict]) -> list[dict]:
+    """Remove duplicate flight numbers from raw Phase 1 extraction output.
+
+    The Nova Act model occasionally returns the same flight number more than once
+    (hallucination / viewport-inference artifact). Keep the first occurrence and log
+    a warning for each dropped duplicate so the issue is visible in the run logs.
+    """
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for item in items:
+        fn = item.get("flight_number", "")
+        if fn in seen:
+            log.warning(
+                "Phase 1: duplicate flight_number '%s' dropped (hallucination guard) — "
+                "airline=%s departure=%s price=%s",
+                fn, item.get("airline"), item.get("departure"), item.get("price"),
+            )
+        else:
+            seen.add(fn)
+            deduped.append(item)
+    return deduped
+
+
 def _build_results(items: list[dict], search_url: str, from_city: str, to_city: str, date: str, travel_class: str) -> list[dict]:
     """Convert raw extracted items into normalised result dicts with search page URL."""
     results = []
@@ -71,6 +129,7 @@ def _build_results(items: list[dict], search_url: str, from_city: str, to_city: 
 
 
 def _hhmm_to_minutes(t: str) -> int:
+    """Parse an HH:MM string and return total minutes since midnight."""
     h, m = t.strip().split(":")
     return int(h) * 60 + int(m)
 
@@ -145,6 +204,7 @@ def _departure_window_to_checkboxes(window: list[str] | None) -> list[str]:
 class CleartripAgent:
 
     def _get_code(self, city: str) -> str:
+        """Map a city name to its IATA airport code using config.yaml city_codes."""
         codes = _CONFIG.get("city_codes") or {}
         return codes.get(city.lower().strip(), city.upper()[:3])
 
@@ -245,166 +305,6 @@ class CleartripAgent:
                     pass
 
     @staticmethod
-    def _extract_offers_for_flights(nova, items: list[dict], search_url: str) -> list[dict]:
-        """For top N cheapest flights: Book → fare+coupons → traveler → fare breakdown.
-
-        Runs inside the existing NovaAct session. For each flight: clicks Book,
-        selects fare + extracts coupons, fills dummy traveler details, skips
-        add-ons, and extracts the full fare breakdown from the payment page.
-        Then navigates back to search results for the next flight.
-        """
-        top_n = _CONFIG.get("offers_top_n", 3)
-        sorted_by_price = sorted(items, key=lambda x: x.get("price", float("inf")))
-        targets = sorted_by_price[:top_n]
-
-        offers_results: list[dict] = []
-
-        for idx, flight in enumerate(targets):
-            airline = flight["airline"]
-            flight_number = flight["flight_number"]
-            price = flight["price"]
-            log.info("Phase 3 [%d/%d]: offers for %s %s ₹%d",
-                     idx + 1, len(targets), airline, flight_number, price)
-
-            itinerary_url = ""
-            try:
-                # Navigate back to search results for flights 2+ (programmatic — no agent act)
-                if idx > 0:
-                    log.info("Phase 3: navigating back to search results")
-                    nova.page.goto(search_url)
-                    nova.page.wait_for_load_state("domcontentloaded")
-
-                # Step 1: Click Book on the matching flight card
-                book_cfg = _CONFIG["steps"]["book_flight"]
-                book_instruction = _sub(
-                    _get_single_instruction(book_cfg),
-                    airline=airline,
-                    flight_number=flight_number,
-                    price=str(price),
-                )
-                nova.act(book_instruction, max_steps=book_cfg.get("max_steps", 8))
-
-                # Step 2+3: Select fare and extract coupons (single act)
-                combined_cfg = _CONFIG["steps"]["select_fare_extract_coupons"]
-                combined_instruction = _get_single_instruction(combined_cfg)
-                coupons_extracted = nova.act(
-                    combined_instruction,
-                    max_steps=combined_cfg.get("max_steps", 15),
-                    schema=combined_cfg["schema"],
-                )
-                itinerary_url = nova.page.url
-
-                coupons: list[dict] | None = None
-                if isinstance(coupons_extracted, ActGetResult) and isinstance(
-                    getattr(coupons_extracted, "parsed_response", None), list
-                ):
-                    coupons = coupons_extracted.parsed_response
-                elif isinstance(coupons_extracted, list):
-                    coupons = coupons_extracted
-
-                coupon_list = coupons or []
-
-                log.info("Phase 3 [%d/%d]: %d coupons for %s %s",
-                         idx + 1, len(targets), len(coupon_list), airline, flight_number)
-
-                fare_breakdown: dict = {}
-                payment_url = ""
-                if idx == 0:
-                    # First flight: skip add-ons (Act 1), then fill contact+traveler and continue to payment (Act 2), then extract fare breakdown
-                    try:
-                        skip_cfg = _CONFIG["steps"]["skip_addons_first"]
-                        nova.act(_get_single_instruction(skip_cfg), max_steps=skip_cfg.get("max_steps", 12))
-                        traveler_cfg = _CONFIG["steps"]["fill_traveler_proceed"]
-                        traveler_instruction = _get_single_instruction(traveler_cfg)
-                        nova.act(traveler_instruction, max_steps=traveler_cfg.get("max_steps", 25))
-
-                        fare_cfg = _CONFIG["steps"]["extract_fare_breakdown"]
-                        fare_instruction = _get_single_instruction(fare_cfg)
-                        fare_result = nova.act(
-                            fare_instruction,
-                            max_steps=fare_cfg.get("max_steps", 10),
-                            schema=fare_cfg["schema"],
-                        )
-                        payment_url = nova.page.url
-
-                        if isinstance(fare_result, ActGetResult) and isinstance(
-                            getattr(fare_result, "parsed_response", None), dict
-                        ):
-                            fare_breakdown = fare_result.parsed_response
-                        elif isinstance(fare_result, dict):
-                            fare_breakdown = fare_result
-
-                        log.info("Phase 3 [%d/%d]: fare breakdown for %s %s — base=₹%s taxes=₹%s conv_fee=₹%s total=₹%s",
-                                 idx + 1, len(targets), airline, flight_number,
-                                 fare_breakdown.get("base_fare"), fare_breakdown.get("taxes"),
-                                 fare_breakdown.get("convenience_fee"), fare_breakdown.get("total_fare"))
-                    except Exception as fare_err:
-                        log.warning("Phase 3 [%d/%d]: fare breakdown failed for %s %s: %s",
-                                    idx + 1, len(targets), airline, flight_number, fare_err)
-                else:
-                    # Second (and later) flight: extract fare summary from booking page (no payment page)
-                    try:
-                        booking_fare_cfg = _CONFIG["steps"]["extract_fare_summary_booking"]
-                        booking_fare_instruction = _get_single_instruction(booking_fare_cfg)
-                        booking_fare_result = nova.act(
-                            booking_fare_instruction,
-                            max_steps=booking_fare_cfg.get("max_steps", 8),
-                            schema=booking_fare_cfg["schema"],
-                        )
-                        if isinstance(booking_fare_result, ActGetResult) and isinstance(
-                            getattr(booking_fare_result, "parsed_response", None), dict
-                        ):
-                            fare_breakdown = booking_fare_result.parsed_response
-                        elif isinstance(booking_fare_result, dict):
-                            fare_breakdown = booking_fare_result
-                        log.info("Phase 3 [%d/%d]: fare summary (booking page) for %s %s — base=₹%s taxes=₹%s conv_fee=₹%s total=₹%s",
-                                 idx + 1, len(targets), airline, flight_number,
-                                 fare_breakdown.get("base_fare"), fare_breakdown.get("taxes"),
-                                 fare_breakdown.get("convenience_fee"), fare_breakdown.get("total_fare"))
-                    except Exception as e:
-                        log.warning("Phase 3 [%d/%d]: fare summary (booking) failed for %s %s: %s",
-                                    idx + 1, len(targets), airline, flight_number, e)
-
-                for c in coupon_list:
-                    c["price_after_coupon"] = max(0, price - c.get("discount", 0))
-                best_price_after_coupon: int | None = None
-                if coupon_list:
-                    best_price_after_coupon = min(c["price_after_coupon"] for c in coupon_list)
-                    log.info("Phase 3 [%d/%d]: best price after coupon for %s %s = ₹%d",
-                             idx + 1, len(targets), airline, flight_number, best_price_after_coupon)
-
-                offers_results.append({
-                    "flight_number": flight_number,
-                    "airline": airline,
-                    "original_price": price,
-                    "fare_type": "VALUE",
-                    "coupons": coupon_list,
-                    "fare_breakdown": fare_breakdown,
-                    "best_price_after_coupon": best_price_after_coupon,
-                    "additional_urls": {
-                        "itinerary": itinerary_url,
-                        "payment": payment_url,
-                    },
-                })
-
-            except Exception as e:
-                log.warning("Phase 3 [%d/%d]: failed for %s %s: %s",
-                            idx + 1, len(targets), airline, flight_number, e)
-                offers_results.append({
-                    "flight_number": flight_number,
-                    "airline": airline,
-                    "original_price": price,
-                    "fare_type": "VALUE",
-                    "coupons": [],
-                    "fare_breakdown": {},
-                    "best_price_after_coupon": None,
-                    "additional_urls": {"itinerary": itinerary_url} if itinerary_url else {},
-                    "error": str(e),
-                })
-
-        return offers_results
-
-    @staticmethod
     def _harvest_itinerary_urls(
         nova,
         items: list[dict],
@@ -460,11 +360,12 @@ class CleartripAgent:
         itinerary_url: str,
         flight_info: dict,
         headless: bool,
-        do_payment_fare: bool = False,
-        coupons_only: bool = False,
     ) -> dict:
-        """Phase B (one parallel session): Open itinerary_url, extract coupons; optionally fare summary or payment fare.
-        If coupons_only=True, only collect coupons and return (no fare breakdown, no payment flow)."""
+        """Open itinerary_url in a new Nova Act session; extract fare summary then coupons.
+
+        Fare summary is extracted first while the page is clean (no modal open).
+        Coupons are extracted next (opens the "View All" dialog). Results returned as a dict.
+        """
         airline = flight_info.get("airline", "")
         flight_number = flight_info.get("flight_number", "")
         price = int(flight_info.get("price", 0))
@@ -481,98 +382,48 @@ class CleartripAgent:
         try:
             get_or_create_workflow_definition(workflow_name)
             with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf:
-                with NovaAct(workflow=wf, starting_page=itinerary_url, headless=headless, tty=False) as nova:
-                    if coupons_only:
-                        # Extract fare details FIRST while "Review your itinerary" is clean (no coupon dialog open).
-                        # Then extract coupons (opens View All dialog); no need to dismiss dialog afterward.
-                        booking_fare_cfg = _CONFIG["steps"].get("extract_fare_summary_booking")
-                        if booking_fare_cfg:
-                            try:
-                                inst = _get_single_instruction(booking_fare_cfg)
-                                out = nova.act(
-                                    inst,
-                                    max_steps=booking_fare_cfg.get("max_steps", 12),
-                                    schema=booking_fare_cfg.get("schema"),
-                                )
-                                parsed = None
-                                if isinstance(out, ActGetResult) and isinstance(getattr(out, "parsed_response", None), dict):
-                                    parsed = out.parsed_response
-                                elif isinstance(out, dict):
-                                    parsed = out
-                                if parsed:
-                                    base_fare_raw = parsed.get("base_fare")
-                                    taxes_raw = parsed.get("taxes")
-                                    if base_fare_raw is not None and taxes_raw is not None:
-                                        base_fare = int(base_fare_raw)
-                                        taxes = int(taxes_raw)
-                                        conv = int(parsed.get("convenience_fee", 0) or 0)
-                                        total = int(parsed.get("total_fare", 0) or 0)
-                                        if total == 0:
-                                            total = price
-                                        if conv == 0 and total >= base_fare + taxes:
-                                            conv = total - base_fare - taxes
-                                        result["fare_breakdown"] = {
-                                            "base_fare": base_fare,
-                                            "taxes": taxes,
-                                            "convenience_fee": conv,
-                                            "total_fare": total,
-                                        }
-                            except Exception as e:
-                                log.debug("Fare summary extraction in coupons_only failed for %s %s: %s", airline, flight_number, e)
-                        # Then extract coupons (scroll to View All, open dialog, extract).
-                        coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
-                        if coupons_cfg:
-                            inst = _get_single_instruction(coupons_cfg)
-                            out = nova.act(inst, max_steps=coupons_cfg.get("max_steps", 12), schema=coupons_cfg.get("schema"))
-                            coupons = getattr(out, "parsed_response", None) if isinstance(out, ActGetResult) else (out if isinstance(out, list) else None)
-                            coupon_list = coupons or []
-                            for c in coupon_list:
-                                c["price_after_coupon"] = max(0, price - c.get("discount", 0))
-                            result["coupons"] = coupon_list
-                            if coupon_list:
-                                result["best_price_after_coupon"] = min(c["price_after_coupon"] for c in coupon_list)
-                        return result
-                    # Non-coupons_only: extract coupons first (legacy order), then reload and fare summary
-                    coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
-                    if coupons_cfg:
-                        inst = _get_single_instruction(coupons_cfg)
-                        out = nova.act(inst, max_steps=coupons_cfg.get("max_steps", 12), schema=coupons_cfg.get("schema"))
-                        coupons = getattr(out, "parsed_response", None) if isinstance(out, ActGetResult) else (out if isinstance(out, list) else None)
-                        coupon_list = coupons or []
-                        for c in coupon_list:
-                            c["price_after_coupon"] = max(0, price - c.get("discount", 0))
-                        result["coupons"] = coupon_list
-                        if coupon_list:
-                            result["best_price_after_coupon"] = min(c["price_after_coupon"] for c in coupon_list)
-                    # Dismiss "Apply coupon or gift card" modal by reloading the itinerary page.
-                    try:
-                        nova.page.reload()
-                        nova.page.wait_for_load_state("domcontentloaded")
-                    except Exception:
-                        pass
-                    # Fare summary from booking page
+                with NovaAct(workflow=wf, starting_page=itinerary_url, headless=headless, tty=False, ignore_https_errors=True) as nova:
+                    # Extract fare summary FIRST while the page is clean (no coupon dialog open).
+                    # Then extract coupons (opens the "View All" dialog).
                     booking_fare_cfg = _CONFIG["steps"].get("extract_fare_summary_booking")
                     if booking_fare_cfg:
-                        inst = _get_single_instruction(booking_fare_cfg)
-                        out = nova.act(inst, max_steps=booking_fare_cfg.get("max_steps", 12), schema=booking_fare_cfg.get("schema"))
-                        if isinstance(out, ActGetResult) and isinstance(getattr(out, "parsed_response", None), dict):
-                            result["fare_breakdown"] = out.parsed_response
-                        elif isinstance(out, dict):
-                            result["fare_breakdown"] = out
-                    # Optional: one session does payment-page fare (skip add-ons, then fill_traveler_proceed, then extract_fare_breakdown)
-                    if do_payment_fare:
                         try:
-                            skip_cfg = _CONFIG["steps"]["skip_addons_first"]
-                            nova.act(_get_single_instruction(skip_cfg), max_steps=skip_cfg.get("max_steps", 12))
-                            traveler_cfg = _CONFIG["steps"]["fill_traveler_proceed"]
-                            nova.act(_get_single_instruction(traveler_cfg), max_steps=traveler_cfg.get("max_steps", 25))
-                            fare_cfg = _CONFIG["steps"]["extract_fare_breakdown"]
-                            out = nova.act(_get_single_instruction(fare_cfg), max_steps=fare_cfg.get("max_steps", 10), schema=fare_cfg["schema"])
+                            inst = _get_single_instruction(booking_fare_cfg)
+                            out = nova.act(
+                                inst,
+                                max_steps=booking_fare_cfg.get("max_steps", 12),
+                                schema=booking_fare_cfg.get("schema"),
+                            )
+                            parsed = None
                             if isinstance(out, ActGetResult) and isinstance(getattr(out, "parsed_response", None), dict):
-                                result["fare_breakdown"] = out.parsed_response
-                            result["additional_urls"]["payment"] = nova.page.url
+                                parsed = out.parsed_response
+                            elif isinstance(out, dict):
+                                parsed = out
+                            if parsed:
+                                base_fare_raw = parsed.get("base_fare")
+                                taxes_raw = parsed.get("taxes")
+                                if parsed.get("fare_type"):
+                                    result["fare_type"] = str(parsed["fare_type"]).strip().upper() or result["fare_type"]
+                                if base_fare_raw is not None and taxes_raw is not None:
+                                    base_fare = int(base_fare_raw)
+                                    taxes = int(taxes_raw)
+                                    conv = int(parsed.get("convenience_fee", 0) or 0)
+                                    total = int(parsed.get("total_fare", 0) or 0)
+                                    if total == 0:
+                                        total = price
+                                    if conv == 0 and total >= base_fare + taxes:
+                                        conv = total - base_fare - taxes
+                                    result["fare_breakdown"] = {
+                                        "base_fare": base_fare,
+                                        "taxes": taxes,
+                                        "convenience_fee": conv,
+                                        "total_fare": total,
+                                    }
                         except Exception as e:
-                            log.warning("Parallel session payment fare failed for %s %s: %s", airline, flight_number, e)
+                            log.debug("Fare summary extraction failed for %s %s: %s", airline, flight_number, e)
+                    coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
+                    if coupons_cfg:
+                        _run_coupon_extraction(nova, coupons_cfg, price, result)
         except Exception as e:
             log.warning("Parallel extract failed for %s %s: %s", airline, flight_number, e)
             result["error"] = str(e)
@@ -590,6 +441,7 @@ class CleartripAgent:
         """Extract ALL flights, then optionally check offers in the same session."""
         log.info("Searching Cleartrip: %s→%s date=%s class=%s fetch_offers=%s", from_city, to_city, date, travel_class, fetch_offers)
 
+        # ── Phase 1: Resolve city codes, build search URL, open Nova Act browser session ──────────
         os.environ.pop("NOVA_ACT_API_KEY", None)
 
         workflow_name = os.environ.get("NOVA_ACT_WORKFLOW_CLEARTRIP") or _CONFIG["workflow_name"]
@@ -610,10 +462,12 @@ class CleartripAgent:
             criteria = self._filters_to_criteria(filters)
 
             with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf:
-                with NovaAct(workflow=wf, starting_page=url, headless=headless, tty=False) as nova:
+                with NovaAct(workflow=wf, starting_page=url, headless=headless, tty=False, ignore_https_errors=True) as nova:
                     log.debug("Nova Act browser started for cleartrip.com (workflow=%s)", workflow_name)
 
-                    # ── Decide: combined filter+extract (one act) or extraction-only ──
+                    # ── Phase 2: Extract flights from results page ─────────────────────────────────────
+                    # Tries a single combined act (filter + extract). Falls back to two-act approach
+                    # (pre-filter act, then extraction act) if the combined act fails.
                     dep_checkboxes = _departure_window_to_checkboxes(
                         (filters or {}).get("departure_window"),
                     )
@@ -681,10 +535,11 @@ class CleartripAgent:
                         items = extracted
 
                     if items is not None:
+                        items = _dedup_raw_items(items)
                         results = _build_results(items, url, from_city, to_city, date, travel_class)
                         log.info("Cleartrip returned %d flights for %s→%s on %s", len(results), from_city, to_city, date)
 
-                        # Phase 3: offers for top N (from filtered list)
+                        # ── Phase 3: Filter candidates for offer harvesting ───────────────────────────────
                         if results and fetch_offers:
                             try:
                                 filtered_items = self._filter_items_for_offers(items, filters)
@@ -693,7 +548,10 @@ class CleartripAgent:
                                 if use_parallel and filtered_items:
                                     top_n = min(_CONFIG.get("offers_top_n", 3), len(filtered_items))
                                     max_workers = min(max_parallel, top_n)
-                                    # Harvest ALL itinerary URLs first (no parallel work until both are in hand)
+                                    # ── Phase 4: Harvest itinerary URLs sequentially ─────────────────────────────────
+                                    # Click Book on each target flight to land on its itinerary page and capture the
+                                    # URL. All URLs are collected before any parallel work begins so both sessions
+                                    # can start at the same time.
                                     harvested = self._harvest_itinerary_urls(
                                         nova,
                                         filtered_items,
@@ -706,7 +564,9 @@ class CleartripAgent:
                                                  h_idx + 1, h["flight"]["airline"],
                                                  h["flight"]["flight_number"],
                                                  h.get("itinerary_url", "NONE"))
-                                    # Parallel coupons-only: each session opens one harvested URL and collects coupons (no convenience_fee / payment)
+                                    # ── Phase 5: Extract offers in parallel (one Nova session per flight URL) ────────
+                                    # Each session: fare summary first (page is clean), then coupons.
+                                    # convenience_fee is propagated from the first offer to all others afterward.
                                     offers_analysis = []
                                     if harvested:
                                         headless = os.environ.get("NOVA_ACT_HEADLESS", "true").lower() == "true"
@@ -718,8 +578,6 @@ class CleartripAgent:
                                                     h["itinerary_url"],
                                                     h["flight"],
                                                     headless,
-                                                    do_payment_fare=False,
-                                                    coupons_only=True,
                                                 ): h
                                                 for h in harvested
                                             }
@@ -747,8 +605,6 @@ class CleartripAgent:
                                         key = lambda o: (o.get("airline"), o.get("flight_number"))
                                         harvested_keys = [(h["flight"]["airline"], h["flight"]["flight_number"]) for h in harvested]
                                         offers_analysis.sort(key=lambda o: harvested_keys.index(key(o)) if key(o) in harvested_keys else 999)
-                                    if not use_parallel:
-                                        offers_analysis = self._extract_offers_for_flights(nova, filtered_items, url)
                                 self._apply_convenience_fee_from_first(offers_analysis)
                                 return {
                                     "flights": results,
@@ -780,6 +636,7 @@ class CleartripAgent:
             return ActExceptionHandler.handle(e, "Cleartrip", context)
 
     def _format_date(self, date_str: str) -> str:
+        """Convert YYYY-MM-DD to DD/MM/YYYY (Cleartrip search URL date format)."""
         try:
             y, m, d = date_str.split("-")
             return f"{d}/{m}/{y}"

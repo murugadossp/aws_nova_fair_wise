@@ -52,7 +52,7 @@ time_buckets:
 steps:
   pre_filter:
     instruction_file: instructions/pre_filter_timings.md
-    max_steps: 10
+    max_steps: 25
 
   extract_with_filter:
     site_adapter_file: instructions/site_adapter_cleartrip.md
@@ -96,15 +96,15 @@ steps:
     
   book_flight:
     instruction_file: instructions/book_flight.md
-    max_steps: 8
+    max_steps: 25
 
   book_then_continue:
     instruction_file: instructions/book_then_continue.md
-    max_steps: 8
+    max_steps: 25
 
   extract_coupons_from_booking_page:
     instruction_file: instructions/extract_coupons_from_booking_page.md
-    max_steps: 12
+    max_steps: 25
     schema:
       type: array
       items:
@@ -118,7 +118,7 @@ steps:
 
   select_fare_extract_coupons:
     instruction_file: instructions/select_fare_extract_coupons.md
-    max_steps: 15
+    max_steps: 25
     schema:
       type: array
       items:
@@ -139,7 +139,7 @@ steps:
 
   skip_addons_first:
     instruction_file: instructions/skip_addons_first.md
-    max_steps: 12
+    max_steps: 25
 
   fill_traveler_proceed:
     instruction_file: instructions/fill_traveler_proceed.md
@@ -147,7 +147,7 @@ steps:
 
   extract_fare_breakdown:
     instruction_file: instructions/extract_fare_breakdown.md
-    max_steps: 10
+    max_steps: 25
     schema:
       type: object
       required:
@@ -172,7 +172,7 @@ steps:
 
   extract_fare_summary_booking:
     instruction_file: instructions/extract_fare_summary_booking.md
-    max_steps: 22
+    max_steps: 25
     schema:
       type: object
       required:
@@ -194,3 +194,5 @@ steps:
         total_fare:
           type: integer
           minimum: 0
+        fare_type:
+          type: string

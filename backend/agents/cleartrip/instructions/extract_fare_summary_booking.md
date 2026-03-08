@@ -8,11 +8,12 @@ You are on the booking/itinerary page ("Review your itinerary"). The fare summar
 
 Locate the fare summary panel on the right side (same page, not the payment page). Scroll only the right-side panel if needed to see Base Fare, Taxes, Convenience fee, and Total.
 
-Extract the following from the fare summary:
+Extract the following from the page:
 
 - base_fare: the base fare amount in INR as an integer (e.g. 5500)
 - taxes: total taxes and surcharges in INR as an integer (e.g. 1232)
 - convenience_fee: the convenience fee in INR as an integer if shown; otherwise use 0
 - total_fare: the total amount in INR as an integer (e.g. 7032)
+- fare_type: the selected fare name exactly as shown on the page (e.g. "Regular", "Value", "Smart", "Saver", "SuperSaver"); look for it near the flight info, fare breakdown, or itinerary header; omit this key entirely if the fare name is not visible anywhere on the page
 
-Return ONLY a valid JSON object with these four fields. No markdown or explanation.
+Return ONLY a valid JSON object. No markdown or explanation.

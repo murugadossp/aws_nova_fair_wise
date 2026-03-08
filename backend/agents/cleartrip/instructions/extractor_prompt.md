@@ -27,6 +27,15 @@ For each flight card, extract these fields (all from the SAME card):
 
 Never mix fields from different cards.
 
+## STRICT RULES
+
+Return only flights that were **actually visible on screen** at some point during your top-to-bottom scroll.
+
+- Do NOT infer, reconstruct, or add any flight from memory, a previous viewport state, or prior knowledge.
+- Do NOT include a flight unless you can confirm you saw its card while scrolling the results.
+- If you did not see a flight card during your scroll, do not include it.
+- Every returned entry must correspond to a card that was rendered and visible in the DOM during your pass.
+
 ## OUTPUT
 
 Return ONLY a valid JSON array with ALL flights on the page.
