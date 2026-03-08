@@ -7,7 +7,9 @@ Apply only the sections below that list checkboxes (same time slots: Early morni
 - **Departure:** Under "Taking off from {{from_city}}" in the TIMINGS section, click these checkboxes: {{departure_checkboxes}}
 - **Arrival:** Under "Landing in {{to_city}}" in the TIMINGS section, click these checkboxes: {{arrival_checkboxes}}
 
-Do NOT click any other filters or checkboxes. Do NOT scroll the main results area yet.
+**If arrival checkboxes are "—":** Do NOT scroll the left sidebar again. Go straight to PHASE 2 (extract flight cards). Do not look for or interact with the "Landing in {{to_city}}" section.
+
+Do NOT click any other filters or checkboxes. Do NOT scroll the main results area until PHASE 2.
 
 ## PHASE 2: EXTRACT ALL FLIGHTS
 

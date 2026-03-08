@@ -461,9 +461,10 @@ class CleartripAgent:
         flight_info: dict,
         headless: bool,
         do_payment_fare: bool = False,
+        coupons_only: bool = False,
     ) -> dict:
-        """Phase B (one parallel session): Open itinerary_url, extract coupons + fare summary.
-        If do_payment_fare, also fill traveler → payment → extract fare breakdown."""
+        """Phase B (one parallel session): Open itinerary_url, extract coupons; optionally fare summary or payment fare.
+        If coupons_only=True, only collect coupons and return (no fare breakdown, no payment flow)."""
         airline = flight_info.get("airline", "")
         flight_number = flight_info.get("flight_number", "")
         price = int(flight_info.get("price", 0))
@@ -481,7 +482,57 @@ class CleartripAgent:
             get_or_create_workflow_definition(workflow_name)
             with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf:
                 with NovaAct(workflow=wf, starting_page=itinerary_url, headless=headless, tty=False) as nova:
-                    # Extract coupons (we're already on booking page)
+                    if coupons_only:
+                        # Extract fare details FIRST while "Review your itinerary" is clean (no coupon dialog open).
+                        # Then extract coupons (opens View All dialog); no need to dismiss dialog afterward.
+                        booking_fare_cfg = _CONFIG["steps"].get("extract_fare_summary_booking")
+                        if booking_fare_cfg:
+                            try:
+                                inst = _get_single_instruction(booking_fare_cfg)
+                                out = nova.act(
+                                    inst,
+                                    max_steps=booking_fare_cfg.get("max_steps", 12),
+                                    schema=booking_fare_cfg.get("schema"),
+                                )
+                                parsed = None
+                                if isinstance(out, ActGetResult) and isinstance(getattr(out, "parsed_response", None), dict):
+                                    parsed = out.parsed_response
+                                elif isinstance(out, dict):
+                                    parsed = out
+                                if parsed:
+                                    base_fare_raw = parsed.get("base_fare")
+                                    taxes_raw = parsed.get("taxes")
+                                    if base_fare_raw is not None and taxes_raw is not None:
+                                        base_fare = int(base_fare_raw)
+                                        taxes = int(taxes_raw)
+                                        conv = int(parsed.get("convenience_fee", 0) or 0)
+                                        total = int(parsed.get("total_fare", 0) or 0)
+                                        if total == 0:
+                                            total = price
+                                        if conv == 0 and total >= base_fare + taxes:
+                                            conv = total - base_fare - taxes
+                                        result["fare_breakdown"] = {
+                                            "base_fare": base_fare,
+                                            "taxes": taxes,
+                                            "convenience_fee": conv,
+                                            "total_fare": total,
+                                        }
+                            except Exception as e:
+                                log.debug("Fare summary extraction in coupons_only failed for %s %s: %s", airline, flight_number, e)
+                        # Then extract coupons (scroll to View All, open dialog, extract).
+                        coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
+                        if coupons_cfg:
+                            inst = _get_single_instruction(coupons_cfg)
+                            out = nova.act(inst, max_steps=coupons_cfg.get("max_steps", 12), schema=coupons_cfg.get("schema"))
+                            coupons = getattr(out, "parsed_response", None) if isinstance(out, ActGetResult) else (out if isinstance(out, list) else None)
+                            coupon_list = coupons or []
+                            for c in coupon_list:
+                                c["price_after_coupon"] = max(0, price - c.get("discount", 0))
+                            result["coupons"] = coupon_list
+                            if coupon_list:
+                                result["best_price_after_coupon"] = min(c["price_after_coupon"] for c in coupon_list)
+                        return result
+                    # Non-coupons_only: extract coupons first (legacy order), then reload and fare summary
                     coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
                     if coupons_cfg:
                         inst = _get_single_instruction(coupons_cfg)
@@ -494,8 +545,6 @@ class CleartripAgent:
                         if coupon_list:
                             result["best_price_after_coupon"] = min(c["price_after_coupon"] for c in coupon_list)
                     # Dismiss "Apply coupon or gift card" modal by reloading the itinerary page.
-                    # Escape key doesn't work — Cleartrip's custom React modal ignores it.
-                    # Reloading resets to base page state with fare summary visible.
                     try:
                         nova.page.reload()
                         nova.page.wait_for_load_state("domcontentloaded")
@@ -651,37 +700,53 @@ class CleartripAgent:
                                         url,
                                         on_url_harvested=None,
                                     )
-                                    # HARVEST-ONLY: build minimal offers_analysis; parallel extraction (coupons/fare) is disabled — see LOG_REVIEW and TODO below
                                     log.info("Harvest complete: %d/%d URLs captured", len(harvested), top_n)
                                     for h_idx, h in enumerate(harvested):
                                         log.info("  Harvest [%d]: %s %s → %s",
                                                  h_idx + 1, h["flight"]["airline"],
                                                  h["flight"]["flight_number"],
                                                  h.get("itinerary_url", "NONE"))
-                                    # Build minimal offers_analysis from harvest (no coupons/fare yet)
+                                    # Parallel coupons-only: each session opens one harvested URL and collects coupons (no convenience_fee / payment)
                                     offers_analysis = []
-                                    for h in harvested:
-                                        fl = h["flight"]
-                                        offers_analysis.append({
-                                            "flight_number": fl["flight_number"],
-                                            "airline": fl["airline"],
-                                            "original_price": fl.get("price", 0),
-                                            "fare_type": "VALUE",
-                                            "coupons": [],
-                                            "fare_breakdown": {},
-                                            "best_price_after_coupon": None,
-                                            "additional_urls": {
-                                                "itinerary": h.get("itinerary_url", ""),
-                                                "payment": "",
-                                            },
-                                        })
-                                    # ── END HARVEST-ONLY TEST ──
-                                    # TODO: re-enable after harvest is verified
-                                    # if not harvested:
-                                    #     log.warning("Parallel: no URLs harvested, falling back to sequential")
-                                    #     offers_analysis = self._extract_offers_for_flights(nova, filtered_items, url)
-                                    # else:
-                                    #     ...parallel offers extraction...
+                                    if harvested:
+                                        headless = os.environ.get("NOVA_ACT_HEADLESS", "true").lower() == "true"
+                                        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                                            futures = {
+                                                executor.submit(
+                                                    self._extract_offers_from_itinerary_url,
+                                                    workflow_name,
+                                                    h["itinerary_url"],
+                                                    h["flight"],
+                                                    headless,
+                                                    do_payment_fare=False,
+                                                    coupons_only=True,
+                                                ): h
+                                                for h in harvested
+                                            }
+                                            for future in as_completed(futures):
+                                                h = futures[future]
+                                                try:
+                                                    offer = future.result()
+                                                    offers_analysis.append(offer)
+                                                except Exception as e:
+                                                    log.warning("Parallel coupons failed for %s %s: %s",
+                                                                h["flight"].get("airline"), h["flight"].get("flight_number"), e)
+                                                    fl = h["flight"]
+                                                    offers_analysis.append({
+                                                        "flight_number": fl["flight_number"],
+                                                        "airline": fl["airline"],
+                                                        "original_price": fl.get("price", 0),
+                                                        "fare_type": "VALUE",
+                                                        "coupons": [],
+                                                        "fare_breakdown": {},
+                                                        "best_price_after_coupon": None,
+                                                        "additional_urls": {"itinerary": h.get("itinerary_url", ""), "payment": ""},
+                                                        "error": str(e),
+                                                    })
+                                        # Preserve order by harvested (flight 1, flight 2)
+                                        key = lambda o: (o.get("airline"), o.get("flight_number"))
+                                        harvested_keys = [(h["flight"]["airline"], h["flight"]["flight_number"]) for h in harvested]
+                                        offers_analysis.sort(key=lambda o: harvested_keys.index(key(o)) if key(o) in harvested_keys else 999)
                                     if not use_parallel:
                                         offers_analysis = self._extract_offers_for_flights(nova, filtered_items, url)
                                 self._apply_convenience_fee_from_first(offers_analysis)

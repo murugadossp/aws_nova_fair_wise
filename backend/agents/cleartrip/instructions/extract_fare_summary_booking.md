@@ -1,10 +1,12 @@
 This is a DATA EXTRACTION task.
 
-You are on the booking/itinerary page (the page where "Apply coupon or gift card" and the coupon list appear).
+You are on the booking/itinerary page ("Review your itinerary"). The fare summary (Base Fare, Taxes, Total) is in the **top-right** of the page.
 
-**First (use minimal steps):** If the "Apply coupon or gift card" dialog is open and blocking the view, dismiss it: this dialog has **no X or Close button** (even after scrolling). **Click outside the dialog** (on the page area behind it, e.g. the main content or a dark overlay) and it will close. Do NOT click "Apply", "OK", or any button inside the dialog — only click outside. Do NOT look for an X or Close button. Once the right-side fare summary panel is visible, proceed to extract.
+**If no dialog is open:** The fare summary panel is already visible in the top-right. Locate it and extract immediately — do not scroll the main page or open any coupon panel.
 
-Locate the fare summary panel on the right side of the page (same page, not the payment page). Scroll the right-side panel if needed to see the complete fare breakdown.
+**If the "Apply coupon or gift card" dialog is open** and blocking the view: dismiss it first. This dialog has **no X or Close button**. **Click outside the dialog** on the dark overlay or main content behind it; it will close. Do NOT click "Apply", "OK", or any button inside the dialog. Once the right-side fare summary panel is visible, proceed to extract.
+
+Locate the fare summary panel on the right side (same page, not the payment page). Scroll only the right-side panel if needed to see Base Fare, Taxes, Convenience fee, and Total.
 
 Extract the following from the fare summary:
 

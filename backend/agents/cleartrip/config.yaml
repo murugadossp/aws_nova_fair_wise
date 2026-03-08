@@ -1,6 +1,7 @@
 workflow_name: "farewise-cleartrip"
 base_url: "https://www.cleartrip.com"
 max_steps_default: 50
+# Number of top (cheapest) filtered flights to harvest URLs for and run parallel coupons-only extraction.
 offers_top_n: 2
 
 # When true: first flight is extracted in main session (same URL not opened again); other flights open in parallel Nova sessions (one URL per session, no duplicate opens).

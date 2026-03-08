@@ -1,3 +1,5 @@
+Use minimal steps: one click on Book, one click on Continue, then return. Do not scroll or explore.
+
 Find the flight card for {{airline}} flight {{flight_number}} priced at ₹{{price}}. Click the orange "Book" button on that card only. Do NOT click any other flight's Book button.
 
 When the "Select your fare" dialog appears (a fare is already selected), click the "Continue" button at the bottom-right of the dialog.
