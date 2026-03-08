@@ -334,40 +334,61 @@ agent.search(from_city, to_city, date, travel_class, filters=filters)
               ▼  { winner, all_results, reasoning }
 ```
 
-### Cleartrip Agent — 2-Layer Optimized Pipeline
+### Cleartrip Agent — Current Architecture
 
-The Cleartrip agent uses a layered approach to minimize the number of flight cards the browser agent must scroll and extract:
+The Cleartrip pipeline now has two distinct layers plus a branch-based offers phase:
 
+```mermaid
+flowchart TD
+    plannerFilters[PlannerOrStructuredFilters] --> buildUrl[BuildSearchUrl]
+    buildUrl --> phase1[Phase1CombinedFilterAndExtract]
+    phase1 --> rawCandidates[RawCandidateFlights]
+    rawCandidates --> normalizer[FlightNormalizer]
+    normalizer --> filteredFlights[FilteredFlights]
+    filteredFlights --> harvest[HarvestTopNItineraryUrls]
+    harvest --> couponProbe[CouponBranchProbeFlight]
+    harvest --> paymentProbe[PaymentBranchProbeFlight]
+    harvest --> couponOther[CouponBranchOtherFlight]
+    couponProbe --> mergeOffers[MergeOfferResults]
+    paymentProbe --> mergeOffers
+    couponOther --> mergeOffers
+    mergeOffers --> finalOffers[OffersAnalysisWithTelemetry]
 ```
-Layer 1: URL ENCODING  (0s — happens at page load)
-  _build_search_url() in agent.py reads filters and config.yaml:
-    max_stops=0  →  &stops=0   (Cleartrip server returns only non-stop flights)
-    travel_class →  &class=Economy|Business|First  (via class_codes in config.yaml)
-  Result: page loads with fewer flights (e.g. 17 non-stop instead of 20+ with connections)
 
-Layer 2: COMBINED FILTER+EXTRACT  (~38.8s avg — single nova.act() call)
-  Only uses combined prompt when departure_window is set in filters.
-  Prompt: site_adapter_cleartrip.md + extract_with_filter.md (merged two-phase prompt)
+#### Layer 1: search URL shaping
 
-  Phase 1 (within single act): Click TIMINGS checkboxes
-    _departure_window_to_checkboxes() maps ["07:00","10:00"] → ["Early morning","Morning"]
-    using time_buckets defined in config.yaml.
-    Agent scrolls sidebar once and clicks the matching checkboxes.
+`_build_search_url()` in `backend/agents/cleartrip/agent.py` reads filters and config:
 
-  Phase 2 (within same act): Extract all visible flights
-    Agent scrolls main results area and reads every flight card as JSON.
-    No dedup/filter logic in the agent — FlightNormalizer handles that in Python.
+- `max_stops=0` -> `&stops=0`
+- `travel_class` -> `&class=Economy|Business|First`
 
-  5-step execution: sidebar scroll → click checkbox 1 → click checkbox 2
-                    → main scroll → return JSON
-  Result: 6 raw flights in a single act() call
+This reduces upstream noise before the browser agent starts reading cards.
 
-  Fallback: if combined act fails, reverts to two-act approach
-    (pre_filter_timings.md + extractor_prompt.md as separate act() calls)
+#### Layer 2: combined filter + extract act
 
-  After extraction, FlightNormalizer applies precise departure_window filtering:
-  6 raw → 4 final (e.g. only flights between 07:00 and 10:00)
-```
+When time filters are present, one Nova act performs both actions:
+
+1. Scroll left sidebar to `TIMINGS`
+2. Click departure and optional arrival checkboxes
+3. Scroll results
+4. Return raw flight-card JSON
+
+This raw list is intentionally treated as non-authoritative. `FlightNormalizer` remains the source of truth for filtering, deduplication, and sorting.
+
+#### Offers phase: harvest first, then branch in parallel
+
+After the filtered list is available:
+
+1. Select top `offers_top_n` flights by price from the filtered list
+2. Use the main search session only to harvest itinerary URLs
+3. Start separate Nova sessions from those harvested itinerary URLs
+
+For the probe flight, the itinerary URL fans out into two separate branches:
+
+- coupon branch: booking fare summary + coupons
+- payment branch: insurance -> add-ons -> contact -> traveller -> payment-page fare extraction
+
+The second analyzed flight currently runs a coupon branch only. After both branches finish, the offer object is merged and convenience fee can be reused across other offers.
 
 **Performance progression (Bengaluru→Hyderabad, departure_window 07:00-10:00):**
 
@@ -383,7 +404,17 @@ Run 14 (consistency):  38.7s    6 raw → 4 filtered   Same approach (3-run aver
 Improvement: 58.1s → 38.8s avg = 33% faster, 50% fewer act() calls, zero data loss
 ```
 
-**Phase 3 (offers/coupon extraction):** See [Cleartrip Phase 3 — Review and Next Steps](cleartrip-phase3-review.md) for test-run review, issues (navigate-back, coupon “View All” visibility), and fixes.
+**Current fresh full-run snapshot (March 2026):**
+
+- Full wrapper: about `289.9s`
+- Phase 1 extract: about `41.3s`
+- Harvest top 2 itinerary URLs: about `58s`
+- Parallel offers wall clock: about `146.9s`
+- Probe flight payment branch: about `146.9s`
+- Probe flight convenience fee: `365`
+- Probe flight payment URL: real `cleartrip.com/pay/air/...` URL captured
+
+**Phase 3 (offers/coupon extraction):** See [Cleartrip Agent — Architecture, Flow and Timings](cleartrip-agent.md) for the current branch-based Phase 3 design and field-level output semantics.
 
 ### Why structured filters instead of free-text criteria?
 

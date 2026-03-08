@@ -35,6 +35,7 @@ usage() {
   echo -e "    ${YELLOW}flipkart${NC}     Flipkart product search              (Nova Act · browser)"
   echo -e "    ${YELLOW}mmt${NC}          MakeMyTrip flight search             (Nova Act · browser)"
   echo -e "    ${YELLOW}cleartrip${NC}    Cleartrip flight search              (Nova Act · browser)"
+  echo -e "    ${YELLOW}cleartrip-itinerary${NC}  Cleartrip single itinerary probe   (Nova Act · browser)"
   echo -e "    ${YELLOW}ixigo${NC}        Ixigo flight search                  (Nova Act · browser)"
   echo -e "    ${YELLOW}goibibo${NC}      Goibibo flight search (legacy)       (Nova Act · browser)"
   echo ""
@@ -53,6 +54,7 @@ usage() {
   echo -e "  ${CYAN}Examples:${NC}"
   echo -e "    ./tests/run_agent.sh amazon"
   echo -e "    ./tests/run_agent.sh cleartrip"
+  echo -e "    ./tests/run_agent.sh cleartrip-itinerary"
   echo -e "    ./tests/run_agent.sh travel"
   echo -e "    ./tests/run_agent.sh all"
   echo -e "  ${CYAN}Logging:${NC} stdout/stderr are written to ${YELLOW}logs/<input>_log.txt${NC} (e.g. cleartrip_log.txt)."
@@ -134,6 +136,9 @@ case "$1" in
     ;;
   cleartrip)
     run_test "Cleartrip Agent"      "test_cleartrip_agent.py"
+    ;;
+  cleartrip-itinerary|cleartrip_itinerary|ct-itinerary)
+    run_test "Cleartrip Single Itinerary" "test_cleartrip_itinerary.py"
     ;;
   ixigo)
     run_test "Ixigo Agent"          "test_ixigo_agent.py"

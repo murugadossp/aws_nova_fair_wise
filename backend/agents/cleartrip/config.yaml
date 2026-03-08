@@ -8,6 +8,9 @@ offers_top_n: 2
 # When false: single session only — Book → coupons → (first: skip add-ons + fill traveler → payment fare; others: booking fare) in same tab. One Chrome; slower than parallel.
 use_parallel_offers: true
 max_parallel_offers: 2
+collect_convenience_fee: true
+convenience_fee_probe_index: 0
+reuse_probe_convenience_fee: true
 
 city_codes:
   mumbai: BOM
@@ -137,13 +140,25 @@ steps:
             type: integer
             minimum: 0
 
-  skip_addons_first:
-    instruction_file: instructions/skip_addons_first.md
-    max_steps: 25
+  payment_insurance_continue:
+    instruction_file: instructions/payment_insurance_continue.md
+    max_steps: 8
 
-  fill_traveler_proceed:
-    instruction_file: instructions/fill_traveler_proceed.md
-    max_steps: 25
+  payment_skip_addons:
+    instruction_file: instructions/payment_skip_addons.md
+    max_steps: 10
+
+  payment_skip_addons_popup:
+    instruction_file: instructions/payment_skip_addons_popup.md
+    max_steps: 5
+
+  payment_contact_continue:
+    instruction_file: instructions/payment_contact_continue.md
+    max_steps: 12
+
+  payment_traveller_continue:
+    instruction_file: instructions/payment_traveller_continue.md
+    max_steps: 12
 
   extract_fare_breakdown:
     instruction_file: instructions/extract_fare_breakdown.md

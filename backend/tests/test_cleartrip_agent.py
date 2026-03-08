@@ -119,13 +119,15 @@ def log_telemetry_summary(telemetry: dict | None):
         return
     timings = telemetry.get("timings_ms", {})
     log.info(
-        "Telemetry: total=%sms phase1=%sms harvest=%sms parallel=%sms workflow=%s model=%s",
+        "Telemetry: total=%sms phase1=%sms harvest=%sms parallel=%sms workflow=%s model=%s collect_convenience_fee=%s probe_index=%s",
         timings.get("total_search_ms", "—"),
         timings.get("phase1_extract_ms", "—"),
         timings.get("harvest_total_ms", "—"),
         timings.get("offer_parallel_wall_clock_ms", "—"),
         telemetry.get("workflow_name", "—"),
         telemetry.get("model_id", "—"),
+        telemetry.get("collect_convenience_fee", False),
+        telemetry.get("convenience_fee_probe_index", "—"),
     )
     for i, harvest in enumerate(telemetry.get("harvest", []), 1):
         log.info(
@@ -138,13 +140,25 @@ def log_telemetry_summary(telemetry: dict | None):
     for i, session in enumerate(telemetry.get("offer_sessions", []), 1):
         st = session.get("timings_ms", {})
         log.info(
-            "  Offer session [%d]: %s %s  fare_ms=%s coupon_ms=%s total_ms=%s",
+            "  Offer session [%d]: %s %s  fare_ms=%s coupon_ms=%s coupon_branch_ms=%s payment_branch_ms=%s wall_clock_ms=%s insurance_ms=%s skip_addons_ms=%s skip_popup_ms=%s contact_ms=%s traveller_ms=%s payment_extract_ms=%s payment_probe_ms=%s total_ms=%s probe=%s%s",
             i,
             session.get("airline"),
             session.get("flight_number"),
             st.get("fare_summary_ms", "—"),
             st.get("coupon_ms", "—"),
+            st.get("coupon_branch_total_ms", "—"),
+            st.get("payment_probe_branch_total_ms", "—"),
+            st.get("parallel_branch_wall_clock_ms", "—"),
+            st.get("insurance_continue_ms", "—"),
+            st.get("skip_addons_ms", "—"),
+            st.get("skip_addons_popup_ms", "—"),
+            st.get("contact_continue_ms", "—"),
+            st.get("traveller_continue_ms", "—"),
+            st.get("payment_fare_extract_ms", "—"),
+            st.get("payment_probe_ms", "—"),
             st.get("session_total_ms", "—"),
+            session.get("payment_probe_enabled", False),
+            f" error={session['payment_probe_error']}" if session.get("payment_probe_error") else "",
         )
 
 
@@ -404,6 +418,12 @@ def test_cleartrip_search(from_city="delhi", to_city="mumbai", days_from_now=7, 
         validate_offers(raw, filters=filters, filtered_flights=filtered if RUN_PHASE_2 and filters else None)
         errors = sum(1 for o in offers_analysis if "error" in o)
         fallbacks = sum(1 for o in offers_analysis if o.get("fare_breakdown", {}).get("source") == "fallback")
+        payment_urls = sum(1 for o in offers_analysis if (o.get("additional_urls", {}) or {}).get("payment"))
+        if telemetry.get("collect_convenience_fee"):
+            if payment_urls:
+                log.info("Phase 3 payment probe: captured %d payment URL(s)", payment_urls)
+            else:
+                log.warning("Phase 3 payment probe: enabled but no payment URL was captured")
         if errors or fallbacks:
             log.warning("Phase 3 PARTIAL PASS (%d offers, %d errors, %d fallback fares)",
                         len(offers_analysis), errors, fallbacks)

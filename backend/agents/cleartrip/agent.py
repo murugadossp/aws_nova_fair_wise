@@ -103,6 +103,256 @@ def _run_coupon_extraction(nova, coupons_cfg: dict, price: int, result: dict) ->
         result["best_price_after_coupon"] = min(c["price_after_coupon"] for c in coupon_list)
 
 
+def _parse_act_dict(output) -> dict | None:
+    """Return a parsed dict from a Nova act result when available."""
+    if isinstance(output, ActGetResult) and isinstance(getattr(output, "parsed_response", None), dict):
+        return output.parsed_response
+    if isinstance(output, dict):
+        return output
+    return None
+
+
+def _run_payment_step(
+    nova,
+    step_name: str,
+    timing_key: str,
+    result: dict,
+    *,
+    optional: bool = False,
+):
+    """Run one payment-probe step and record its timing."""
+    step_cfg = _CONFIG["steps"].get(step_name)
+    if not step_cfg:
+        return None
+
+    timings = result.setdefault("telemetry", {}).setdefault("timings_ms", {})
+    started = perf_counter()
+    try:
+        output = nova.act(
+            _get_single_instruction(step_cfg),
+            max_steps=step_cfg.get("max_steps", 10),
+            schema=step_cfg.get("schema"),
+        )
+    except Exception as e:
+        timings[timing_key] = _elapsed_ms(started)
+        if optional:
+            result.setdefault("telemetry", {}).setdefault("payment_probe_step_errors", {})[step_name] = str(e)
+            log.debug("Optional payment step failed (%s): %s", step_name, e)
+            return None
+        raise
+
+    timings[timing_key] = _elapsed_ms(started)
+    return _parse_act_dict(output)
+
+
+def _run_payment_probe(nova, result: dict) -> None:
+    """Continue the same Nova session to payment using modular screen-specific acts."""
+    timings = result.setdefault("telemetry", {}).setdefault("timings_ms", {})
+    probe_started = perf_counter()
+
+    _run_payment_step(
+        nova,
+        "payment_insurance_continue",
+        "insurance_continue_ms",
+        result,
+        optional=True,
+    )
+    _run_payment_step(
+        nova,
+        "payment_skip_addons",
+        "skip_addons_ms",
+        result,
+    )
+    _run_payment_step(
+        nova,
+        "payment_skip_addons_popup",
+        "skip_addons_popup_ms",
+        result,
+        optional=True,
+    )
+    _run_payment_step(
+        nova,
+        "payment_contact_continue",
+        "contact_continue_ms",
+        result,
+    )
+    _run_payment_step(
+        nova,
+        "payment_traveller_continue",
+        "traveller_continue_ms",
+        result,
+    )
+
+    parsed = _run_payment_step(
+        nova,
+        "extract_fare_breakdown",
+        "payment_fare_extract_ms",
+        result,
+    )
+
+    payment_url = nova.page.url
+    if payment_url and payment_url.startswith("http"):
+        result["additional_urls"]["payment"] = payment_url
+
+    if parsed:
+        result["fare_breakdown"] = {
+            "base_fare": int(parsed.get("base_fare", 0) or 0),
+            "taxes": int(parsed.get("taxes", 0) or 0),
+            "convenience_fee": int(parsed.get("convenience_fee", 0) or 0),
+            "total_fare": int(parsed.get("total_fare", 0) or 0),
+        }
+
+    timings["payment_probe_ms"] = _elapsed_ms(probe_started)
+
+
+def _new_offer_result(
+    workflow_name: str,
+    itinerary_url: str,
+    flight_info: dict,
+    *,
+    payment_probe_enabled: bool,
+) -> dict:
+    return {
+        "flight_number": flight_info.get("flight_number", ""),
+        "airline": flight_info.get("airline", ""),
+        "original_price": int(flight_info.get("price", 0) or 0),
+        "fare_type": "VALUE",
+        "coupons": [],
+        "fare_breakdown": {},
+        "best_price_after_coupon": None,
+        "additional_urls": {"itinerary": itinerary_url, "payment": ""},
+        "telemetry": {
+            "workflow_name": workflow_name,
+            "model_id": "nova-act-latest",
+            "starting_page": itinerary_url,
+            "payment_probe_enabled": payment_probe_enabled,
+            "timings_ms": {},
+        },
+    }
+
+
+def _extract_coupon_offer_branch(
+    workflow_name: str,
+    itinerary_url: str,
+    flight_info: dict,
+    headless: bool,
+) -> dict:
+    airline = flight_info.get("airline", "")
+    flight_number = flight_info.get("flight_number", "")
+    price = int(flight_info.get("price", 0) or 0)
+    session_started = perf_counter()
+    result = _new_offer_result(
+        workflow_name,
+        itinerary_url,
+        flight_info,
+        payment_probe_enabled=False,
+    )
+    timings = result["telemetry"]["timings_ms"]
+    try:
+        get_or_create_workflow_definition(workflow_name)
+        with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf:
+            with NovaAct(workflow=wf, starting_page=itinerary_url, headless=headless, tty=False, ignore_https_errors=True) as nova:
+                booking_fare_cfg = _CONFIG["steps"].get("extract_fare_summary_booking")
+                if booking_fare_cfg:
+                    try:
+                        fare_started = perf_counter()
+                        out = nova.act(
+                            _get_single_instruction(booking_fare_cfg),
+                            max_steps=booking_fare_cfg.get("max_steps", 12),
+                            schema=booking_fare_cfg.get("schema"),
+                        )
+                        parsed = _parse_act_dict(out)
+                        if parsed:
+                            base_fare_raw = parsed.get("base_fare")
+                            taxes_raw = parsed.get("taxes")
+                            if parsed.get("fare_type"):
+                                result["fare_type"] = str(parsed["fare_type"]).strip().upper() or result["fare_type"]
+                            if base_fare_raw is not None and taxes_raw is not None:
+                                base_fare = int(base_fare_raw)
+                                taxes = int(taxes_raw)
+                                conv = int(parsed.get("convenience_fee", 0) or 0)
+                                total = int(parsed.get("total_fare", 0) or 0)
+                                if total == 0:
+                                    total = price
+                                if conv == 0 and total >= base_fare + taxes:
+                                    conv = total - base_fare - taxes
+                                result["fare_breakdown"] = {
+                                    "base_fare": base_fare,
+                                    "taxes": taxes,
+                                    "convenience_fee": conv,
+                                    "total_fare": total,
+                                }
+                                result["original_price"] = total
+                        timings["fare_summary_ms"] = _elapsed_ms(fare_started)
+                    except Exception as e:
+                        log.debug("Fare summary extraction failed for %s %s: %s", airline, flight_number, e)
+                coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
+                if coupons_cfg:
+                    coupon_started = perf_counter()
+                    _run_coupon_extraction(nova, coupons_cfg, result["original_price"] or price, result)
+                    timings["coupon_ms"] = _elapsed_ms(coupon_started)
+    except Exception as e:
+        log.warning("Coupon branch failed for %s %s: %s", airline, flight_number, e)
+        result["error"] = str(e)
+    timings["coupon_branch_total_ms"] = _elapsed_ms(session_started)
+    return result
+
+
+def _extract_payment_offer_branch(
+    workflow_name: str,
+    itinerary_url: str,
+    flight_info: dict,
+    headless: bool,
+) -> dict:
+    airline = flight_info.get("airline", "")
+    flight_number = flight_info.get("flight_number", "")
+    session_started = perf_counter()
+    result = _new_offer_result(
+        workflow_name,
+        itinerary_url,
+        flight_info,
+        payment_probe_enabled=True,
+    )
+    timings = result["telemetry"]["timings_ms"]
+    try:
+        get_or_create_workflow_definition(workflow_name)
+        with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf:
+            with NovaAct(workflow=wf, starting_page=itinerary_url, headless=headless, tty=False, ignore_https_errors=True) as nova:
+                _run_payment_probe(nova, result)
+    except Exception as e:
+        log.warning("Payment probe failed for %s %s: %s", airline, flight_number, e)
+        result["telemetry"]["payment_probe_error"] = str(e)
+    timings["payment_probe_branch_total_ms"] = _elapsed_ms(session_started)
+    return result
+
+
+def _merge_offer_branch_results(coupon_result: dict, payment_result: dict | None = None) -> dict:
+    merge_started = perf_counter()
+    merged = coupon_result
+    merged_telemetry = merged.setdefault("telemetry", {})
+    merged_timings = merged_telemetry.setdefault("timings_ms", {})
+
+    if payment_result:
+        payment_telemetry = payment_result.get("telemetry") or {}
+        payment_timings = payment_telemetry.get("timings_ms") or {}
+        for key, value in payment_timings.items():
+            if key != "session_total_ms":
+                merged_timings[key] = value
+        payment_url = ((payment_result.get("additional_urls") or {}).get("payment") or "").strip()
+        if payment_url:
+            merged.setdefault("additional_urls", {})["payment"] = payment_url
+        if payment_result.get("fare_breakdown"):
+            merged["fare_breakdown"] = payment_result["fare_breakdown"]
+        if payment_telemetry.get("payment_probe_error"):
+            merged_telemetry["payment_probe_error"] = payment_telemetry["payment_probe_error"]
+        if payment_telemetry.get("payment_probe_step_errors"):
+            merged_telemetry["payment_probe_step_errors"] = payment_telemetry["payment_probe_step_errors"]
+        merged_telemetry["payment_probe_enabled"] = True
+
+    merged_timings["offer_merge_ms"] = _elapsed_ms(merge_started)
+    return merged
+
+
 def _dedup_raw_items(items: list[dict]) -> list[dict]:
     """Remove exact duplicate Phase 1 rows from candidate extraction output.
 
@@ -347,6 +597,8 @@ class CleartripAgent:
         Do not use base_fare/taxes/total_fare from index 0 — each offer keeps its own fare; we only reuse convenience_fee.
         When an offer has empty fare_breakdown (e.g. parallel session hit max_steps), fill a minimal breakdown with
         convenience_fee and total_fare from original_price so the offer still shows a breakdown."""
+        if not _CONFIG.get("reuse_probe_convenience_fee", True):
+            return
         if not offers_analysis:
             return
         conv = None
@@ -451,86 +703,43 @@ class CleartripAgent:
         itinerary_url: str,
         flight_info: dict,
         headless: bool,
+        do_payment_probe: bool = False,
     ) -> dict:
-        """Open itinerary_url in a new Nova Act session; extract fare summary then coupons.
+        """Open itinerary_url in fresh Nova sessions and merge branch results.
 
-        Fare summary is extracted first while the page is clean (no modal open).
-        Coupons are extracted next (opens the "View All" dialog). Results returned as a dict.
+        Coupon extraction stays on the itinerary page. When payment probing is enabled,
+        a second independent session starts from the same itinerary URL in parallel so
+        coupon-dialog state cannot leak into the convenience-fee flow.
         """
-        airline = flight_info.get("airline", "")
-        flight_number = flight_info.get("flight_number", "")
-        price = int(flight_info.get("price", 0))
         session_started = perf_counter()
-        result = {
-            "flight_number": flight_number,
-            "airline": airline,
-            "original_price": price,
-            "fare_type": "VALUE",
-            "coupons": [],
-            "fare_breakdown": {},
-            "best_price_after_coupon": None,
-            "additional_urls": {"itinerary": itinerary_url, "payment": ""},
-            "telemetry": {
-                "workflow_name": workflow_name,
-                "model_id": "nova-act-latest",
-                "starting_page": itinerary_url,
-                "timings_ms": {},
-            },
-        }
-        try:
-            get_or_create_workflow_definition(workflow_name)
-            with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf:
-                with NovaAct(workflow=wf, starting_page=itinerary_url, headless=headless, tty=False, ignore_https_errors=True) as nova:
-                    # Extract fare summary FIRST while the page is clean (no coupon dialog open).
-                    # Then extract coupons (opens the "View All" dialog).
-                    booking_fare_cfg = _CONFIG["steps"].get("extract_fare_summary_booking")
-                    if booking_fare_cfg:
-                        try:
-                            fare_started = perf_counter()
-                            inst = _get_single_instruction(booking_fare_cfg)
-                            out = nova.act(
-                                inst,
-                                max_steps=booking_fare_cfg.get("max_steps", 12),
-                                schema=booking_fare_cfg.get("schema"),
-                            )
-                            parsed = None
-                            if isinstance(out, ActGetResult) and isinstance(getattr(out, "parsed_response", None), dict):
-                                parsed = out.parsed_response
-                            elif isinstance(out, dict):
-                                parsed = out
-                            if parsed:
-                                base_fare_raw = parsed.get("base_fare")
-                                taxes_raw = parsed.get("taxes")
-                                if parsed.get("fare_type"):
-                                    result["fare_type"] = str(parsed["fare_type"]).strip().upper() or result["fare_type"]
-                                if base_fare_raw is not None and taxes_raw is not None:
-                                    base_fare = int(base_fare_raw)
-                                    taxes = int(taxes_raw)
-                                    conv = int(parsed.get("convenience_fee", 0) or 0)
-                                    total = int(parsed.get("total_fare", 0) or 0)
-                                    if total == 0:
-                                        total = price
-                                    if conv == 0 and total >= base_fare + taxes:
-                                        conv = total - base_fare - taxes
-                                    result["fare_breakdown"] = {
-                                        "base_fare": base_fare,
-                                        "taxes": taxes,
-                                        "convenience_fee": conv,
-                                        "total_fare": total,
-                                    }
-                            result["telemetry"]["timings_ms"]["fare_summary_ms"] = _elapsed_ms(fare_started)
-                        except Exception as e:
-                            log.debug("Fare summary extraction failed for %s %s: %s", airline, flight_number, e)
-                    coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
-                    if coupons_cfg:
-                        coupon_started = perf_counter()
-                        _run_coupon_extraction(nova, coupons_cfg, price, result)
-                        result["telemetry"]["timings_ms"]["coupon_ms"] = _elapsed_ms(coupon_started)
-        except Exception as e:
-            log.warning("Parallel extract failed for %s %s: %s", airline, flight_number, e)
-            result["error"] = str(e)
-        result["telemetry"]["timings_ms"]["session_total_ms"] = _elapsed_ms(session_started)
-        return result
+        if not do_payment_probe:
+            result = _extract_coupon_offer_branch(workflow_name, itinerary_url, flight_info, headless)
+            result.setdefault("telemetry", {}).setdefault("timings_ms", {})["session_total_ms"] = _elapsed_ms(session_started)
+            return result
+
+        parallel_started = perf_counter()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            coupon_future = executor.submit(
+                _extract_coupon_offer_branch,
+                workflow_name,
+                itinerary_url,
+                flight_info,
+                headless,
+            )
+            payment_future = executor.submit(
+                _extract_payment_offer_branch,
+                workflow_name,
+                itinerary_url,
+                flight_info,
+                headless,
+            )
+            coupon_result = coupon_future.result()
+            payment_result = payment_future.result()
+
+        merged = _merge_offer_branch_results(coupon_result, payment_result)
+        merged.setdefault("telemetry", {}).setdefault("timings_ms", {})["parallel_branch_wall_clock_ms"] = _elapsed_ms(parallel_started)
+        merged["telemetry"]["timings_ms"]["session_total_ms"] = _elapsed_ms(session_started)
+        return merged
 
     def search(
         self,
@@ -559,6 +768,8 @@ class CleartripAgent:
             "workflow_name": workflow_name,
             "model_id": "nova-act-latest",
             "search_url": url,
+            "collect_convenience_fee": _CONFIG.get("collect_convenience_fee", False),
+            "convenience_fee_probe_index": int(_CONFIG.get("convenience_fee_probe_index", 0) or 0),
             "timings_ms": {},
             "harvest": [],
             "offer_sessions": [],
@@ -676,6 +887,8 @@ class CleartripAgent:
                                 filtered_items = self._filter_items_for_offers(items, filters)
                                 use_parallel = _CONFIG.get("use_parallel_offers", False)
                                 max_parallel = _CONFIG.get("max_parallel_offers", 2)
+                                collect_convenience_fee = _CONFIG.get("collect_convenience_fee", False)
+                                convenience_fee_probe_index = int(_CONFIG.get("convenience_fee_probe_index", 0) or 0)
                                 if use_parallel and filtered_items:
                                     top_n = min(_CONFIG.get("offers_top_n", 3), len(filtered_items))
                                     max_workers = min(max_parallel, top_n)
@@ -713,8 +926,9 @@ class CleartripAgent:
                                                     h["itinerary_url"],
                                                     h["flight"],
                                                     headless,
+                                                    collect_convenience_fee and idx == convenience_fee_probe_index,
                                                 ): h
-                                                for h in harvested
+                                                for idx, h in enumerate(harvested)
                                             }
                                             for future in as_completed(futures):
                                                 h = futures[future]
@@ -752,6 +966,8 @@ class CleartripAgent:
                                                 "flight_number": offer.get("flight_number"),
                                                 "airline": offer.get("airline"),
                                                 "starting_page": (offer.get("telemetry") or {}).get("starting_page", ""),
+                                                "payment_probe_enabled": (offer.get("telemetry") or {}).get("payment_probe_enabled", False),
+                                                "payment_probe_error": (offer.get("telemetry") or {}).get("payment_probe_error", ""),
                                                 "timings_ms": (offer.get("telemetry") or {}).get("timings_ms", {}),
                                             }
                                             for offer in offers_analysis
