@@ -1,7 +1,7 @@
 """
 Test: Cleartrip — Full Pipeline
-Phase 1: Agent extracts ALL flights from cleartrip.com
-Phase 2: FlightNormalizer filters + sorts + deduplicates (Python)
+Phase 1: Agent extracts candidate flight cards from cleartrip.com
+Phase 2: FlightNormalizer filters + sorts + deduplicates authoritatively (Python)
 Phase 3: Offers analysis in the same browser session (optional)
 
 Run: python3 tests/test_cleartrip_agent.py
@@ -57,10 +57,66 @@ def assert_ok(condition: bool, message: str):
         raise AssertionError(message)
 
 
+def _load_time_buckets() -> list[tuple[str, int, int]]:
+    raw = _CLEARTRIP_CONFIG.get("time_buckets") or []
+    return [(b["label"], _parse_hhmm(b["start"]), _parse_hhmm(b["end"])) for b in raw]
+
+
+def _departure_window_to_bucket_labels(window: list[str] | None) -> list[str]:
+    if not window or len(window) != 2:
+        return []
+    try:
+        lo = _parse_hhmm(window[0])
+        hi = _parse_hhmm(window[1])
+    except (ValueError, AttributeError, TypeError):
+        return []
+    labels = [label for label, start_min, end_min in _load_time_buckets() if lo < end_min and start_min <= hi]
+    return labels if len(labels) != len(_load_time_buckets()) else []
+
+
+def _bucket_label_for_time(hhmm: str) -> str | None:
+    try:
+        value = _parse_hhmm(hhmm)
+    except (ValueError, AttributeError, TypeError):
+        return None
+    for label, start_min, end_min in _load_time_buckets():
+        if start_min <= value < end_min:
+            return label
+    return None
+
+
+def log_phase1_candidate_warnings(flights: list[dict], filters: dict | None):
+    """Surface suspicious Phase 1 rows as warnings without failing the run."""
+    filters = filters or {}
+    selected_dep_labels = _departure_window_to_bucket_labels(filters.get("departure_window"))
+    if not selected_dep_labels:
+        return
+    warned = 0
+    for i, flight in enumerate(flights):
+        dep = flight.get("departure", "")
+        bucket = _bucket_label_for_time(dep)
+        if bucket is None:
+            warned += 1
+            log.warning("Phase 1 warning: candidate[%d] has unreadable departure %r", i, dep)
+        elif bucket not in selected_dep_labels:
+            warned += 1
+            log.warning(
+                "Phase 1 warning: candidate[%d] %s %s departure=%s bucket=%s outside selected buckets=%s",
+                i,
+                flight.get("airline"),
+                flight.get("flight_number"),
+                dep,
+                bucket,
+                selected_dep_labels,
+            )
+    if warned == 0:
+        log.info("Phase 1 warnings: none (all candidate departures fit selected Cleartrip buckets %s)", selected_dep_labels)
+
+
 # ── Phase 1 validation ─────────────────────────────────────
 
 def validate_flight_schema(flights: list[dict]):
-    """Validate raw agent output: schema, types, times, URL."""
+    """Validate Phase 1 candidate output: schema, types, times, URL."""
     assert_ok(len(flights) > 0, "validate_flight_schema expects at least one flight")
     for i, f in enumerate(flights):
         for field in REQUIRED_FLIGHT_FIELDS:
@@ -271,7 +327,7 @@ def test_cleartrip_search(from_city="delhi", to_city="mumbai", days_from_now=7, 
         results = raw if isinstance(raw, list) else []
         offers_analysis = []
 
-    log.info("Phase 1: Agent extracted %d raw flights", len(results))
+    log.info("Phase 1: Agent extracted %d candidate flights (non-authoritative)", len(results))
     for i, r in enumerate(results, 1):
         log.info("  [%d] %s %s  dep=%s arr=%s dur=%s stops=%s  price=₹%s",
                  i, r.get("airline"), r.get("flight_number"),
@@ -283,7 +339,8 @@ def test_cleartrip_search(from_city="delhi", to_city="mumbai", days_from_now=7, 
     assert_ok(all(r.get("platform") == "cleartrip" for r in results),
               "platform field must be 'cleartrip'")
     validate_flight_schema(results)
-    log.info("Phase 1 PASSED (%d raw flights)", len(results))
+    log_phase1_candidate_warnings(results, filters)
+    log.info("Phase 1 PASSED (%d candidate flights)", len(results))
 
     # ── Phase 2: FlightNormalizer — filter + sort + dedup ───────
     filtered = results
@@ -316,7 +373,7 @@ def test_cleartrip_search(from_city="delhi", to_city="mumbai", days_from_now=7, 
     else:
         log.info("Phase 3 SKIPPED (set RUN_PHASE_3 = True to enable)")
 
-    log.info("test_cleartrip_search PASSED  (raw=%d, filtered=%d, offers=%d)",
+    log.info("test_cleartrip_search PASSED  (candidate=%d, filtered=%d, offers=%d)",
              len(results), len(filtered), len(offers_analysis))
     return {"raw": results, "filtered": filtered, "offers_analysis": offers_analysis}
 

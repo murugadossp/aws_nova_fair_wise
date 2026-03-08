@@ -1,8 +1,16 @@
 """
 Cleartrip — Nova Act Agent
-Searches cleartrip.com for flights and returns ALL results.
-Filtering, sorting, and deduplication happen in FlightNormalizer (Python),
-not in the Nova Act prompt — the agent is a pure data reader.
+
+Phase 1 returns candidate flight cards read from the results UI. This output is
+useful for observability and debugging, but it is not treated as authoritative
+for filtering or offer selection because the model can occasionally over-include
+or reconstruct rows while scrolling.
+
+Filtering, sorting, and deduplication happen authoritatively in
+FlightNormalizer (Python), not in the Nova Act prompt. Downstream offer
+harvesting must use the filtered Python output, not the raw Phase 1 candidate
+list directly.
+
 Instructions live in .md files under instructions/; config.yaml holds schemas.
 """
 
@@ -90,30 +98,38 @@ def _run_coupon_extraction(nova, coupons_cfg: dict, price: int, result: dict) ->
 
 
 def _dedup_raw_items(items: list[dict]) -> list[dict]:
-    """Remove duplicate flight numbers from raw Phase 1 extraction output.
+    """Remove exact duplicate Phase 1 rows from candidate extraction output.
 
-    The Nova Act model occasionally returns the same flight number more than once
-    (hallucination / viewport-inference artifact). Keep the first occurrence and log
-    a warning for each dropped duplicate so the issue is visible in the run logs.
+    The Nova Act model occasionally returns the same card more than once during a
+    scroll-through. Deduplicate by a fuller card identity instead of flight_number
+    alone so we do not accidentally collapse legitimate distinct rows that happen
+    to reuse a flight number.
     """
-    seen: set[str] = set()
+    seen: set[tuple[str, str, str, str, int | str]] = set()
     deduped: list[dict] = []
     for item in items:
-        fn = item.get("flight_number", "")
-        if fn in seen:
+        key = (
+            str(item.get("airline", "")).strip(),
+            str(item.get("flight_number", "")).strip(),
+            str(item.get("departure", "")).strip(),
+            str(item.get("arrival", "")).strip(),
+            item.get("price", ""),
+        )
+        if key in seen:
             log.warning(
-                "Phase 1: duplicate flight_number '%s' dropped (hallucination guard) — "
-                "airline=%s departure=%s price=%s",
-                fn, item.get("airline"), item.get("departure"), item.get("price"),
+                "Phase 1: duplicate candidate row dropped (hallucination guard) — "
+                "airline=%s flight_number=%s departure=%s arrival=%s price=%s",
+                item.get("airline"), item.get("flight_number"), item.get("departure"),
+                item.get("arrival"), item.get("price"),
             )
         else:
-            seen.add(fn)
+            seen.add(key)
             deduped.append(item)
     return deduped
 
 
 def _build_results(items: list[dict], search_url: str, from_city: str, to_city: str, date: str, travel_class: str) -> list[dict]:
-    """Convert raw extracted items into normalised result dicts with search page URL."""
+    """Convert Phase 1 candidate items into result dicts with the search page URL."""
     results = []
     for item in items:
         results.append({
@@ -199,6 +215,65 @@ def _departure_window_to_checkboxes(window: list[str] | None) -> list[str]:
     if len(labels) == len(buckets):
         return []
     return labels
+
+
+def _timing_instruction(section: str, city: str, checkboxes: list[str], disabled_behavior: str) -> str:
+    """Build a concrete timing-filter instruction line for the prompt."""
+    if checkboxes:
+        joined = ", ".join(f'"{cb}"' for cb in checkboxes)
+        return f'- **{section}:** Under "{section} {city}" in the TIMINGS section, click these checkboxes: {joined}'
+    return disabled_behavior
+
+
+def _bucket_label_for_time(hhmm: str) -> str | None:
+    """Return the configured Cleartrip timing bucket label for an HH:MM string."""
+    try:
+        value = _hhmm_to_minutes(hhmm)
+    except (ValueError, AttributeError, TypeError):
+        return None
+    for label, start_min, end_min in _load_time_buckets():
+        if start_min <= value < end_min:
+            return label
+    return None
+
+
+def _log_phase1_candidate_warnings(
+    items: list[dict],
+    departure_checkboxes: list[str],
+    arrival_checkboxes: list[str],
+) -> None:
+    """Log suspicious Phase 1 rows without changing response shape or flow."""
+    if not items:
+        return
+    for item in items:
+        if departure_checkboxes:
+            dep_label = _bucket_label_for_time(item.get("departure", ""))
+            if dep_label is None:
+                log.warning(
+                    "Phase 1: candidate row has unreadable departure time — flight=%s %s departure=%r",
+                    item.get("airline"), item.get("flight_number"), item.get("departure"),
+                )
+            elif dep_label not in departure_checkboxes:
+                log.warning(
+                    "Phase 1: candidate row falls outside selected departure buckets — "
+                    "flight=%s %s departure=%s bucket=%s selected=%s",
+                    item.get("airline"), item.get("flight_number"), item.get("departure"),
+                    dep_label, departure_checkboxes,
+                )
+        if arrival_checkboxes:
+            arr_label = _bucket_label_for_time(item.get("arrival", ""))
+            if arr_label is None:
+                log.warning(
+                    "Phase 1: candidate row has unreadable arrival time — flight=%s %s arrival=%r",
+                    item.get("airline"), item.get("flight_number"), item.get("arrival"),
+                )
+            elif arr_label not in arrival_checkboxes:
+                log.warning(
+                    "Phase 1: candidate row falls outside selected arrival buckets — "
+                    "flight=%s %s arrival=%s bucket=%s selected=%s",
+                    item.get("airline"), item.get("flight_number"), item.get("arrival"),
+                    arr_label, arrival_checkboxes,
+                )
 
 
 class CleartripAgent:
@@ -481,12 +556,24 @@ class CleartripAgent:
 
                     if has_time_filter and _CONFIG["steps"].get("extract_with_filter"):
                         combined_cfg = _CONFIG["steps"]["extract_with_filter"]
+                        departure_instruction = _timing_instruction(
+                            "Taking off from",
+                            from_city,
+                            dep_checkboxes,
+                            "- **Departure:** No departure timing checkboxes were requested for this run. Do not interact with any departure timing filters.",
+                        )
+                        arrival_instruction = _timing_instruction(
+                            "Landing in",
+                            to_city,
+                            arr_checkboxes,
+                            "- **Arrival:** Arrival filtering is disabled for this run. Do NOT scroll the left sidebar again. Do NOT look for, inspect, mention, or interact with the arrival timing section. Go straight to PHASE 2 after applying the departure checkboxes.",
+                        )
                         combined_instruction = _sub(
                             _get_instruction(combined_cfg),
                             from_city=from_city,
                             to_city=to_city,
-                            departure_checkboxes=", ".join(f'"{cb}"' for cb in dep_checkboxes) if dep_checkboxes else "—",
-                            arrival_checkboxes=", ".join(f'"{cb}"' for cb in arr_checkboxes) if arr_checkboxes else "—",
+                            departure_instruction=departure_instruction,
+                            arrival_instruction=arrival_instruction,
                         )
                         log.info("Combined filter+extract: departure=%s arrival=%s (single act)", dep_checkboxes, arr_checkboxes)
                         try:
@@ -535,7 +622,10 @@ class CleartripAgent:
                         items = extracted
 
                     if items is not None:
+                        # Phase 1 output is a candidate list from the UI. Keep it for visibility,
+                        # but do not treat it as the authoritative filtered set.
                         items = _dedup_raw_items(items)
+                        _log_phase1_candidate_warnings(items, dep_checkboxes, arr_checkboxes)
                         results = _build_results(items, url, from_city, to_city, date, travel_class)
                         log.info("Cleartrip returned %d flights for %s→%s on %s", len(results), from_city, to_city, date)
 

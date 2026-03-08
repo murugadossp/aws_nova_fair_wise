@@ -4,10 +4,10 @@ As soon as any flight cards appear on the results page, IMMEDIATELY scroll the L
 
 Apply only the sections below that list checkboxes (same time slots: Early morning, Morning, Afternoon, Evening, Night). If a section says "—" or is empty, skip it.
 
-- **Departure:** Under "Taking off from {{from_city}}" in the TIMINGS section, click these checkboxes: {{departure_checkboxes}}
-- **Arrival:** Under "Landing in {{to_city}}" in the TIMINGS section, click these checkboxes: {{arrival_checkboxes}}
+Use the UI buckets exactly as provided below. Do NOT reinterpret them into an exact HH:MM range. If a selected bucket is broad, that is expected on Cleartrip.
 
-**If arrival checkboxes are "—":** Do NOT scroll the left sidebar again. Go straight to PHASE 2 (extract flight cards). Do not look for or interact with the "Landing in {{to_city}}" section.
+{{departure_instruction}}
+{{arrival_instruction}}
 
 Do NOT click any other filters or checkboxes. Do NOT scroll the main results area until PHASE 2.
 
@@ -30,6 +30,12 @@ For each card extract these fields (all from the SAME card):
 - stops: integer (0 for non-stop, 1 for 1 stop)
 - price: integer price in INR (remove ₹ and commas — e.g. ₹8,760 → 8760)
 
-**Strict:** You must scroll the main results (steps 1–4 above) to find all flight cards, then return every flight you saw during that scroll-through. Include only flights that were actually visible on screen at some point during your scroll of the filtered results — do not add any flight from memory, a different viewport state, or inference. If you did not see a flight card while scrolling the results, do not include it.
+**Strict extraction rules:**
+
+- Return every flight card you actually saw during this filtered scroll-through, and only those cards.
+- Do NOT add any flight from memory, a previous viewport state, prior search knowledge, or inference.
+- Do NOT mention or return a card unless you saw that specific card on screen during this run.
+- If you are unsure whether a card was visible, leave it out.
+- Keep the list in the same top-to-bottom order that the cards were seen while scrolling.
 
 Return ONLY a valid JSON array of all flights. No markdown or explanation.
