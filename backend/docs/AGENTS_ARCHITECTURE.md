@@ -24,7 +24,14 @@ backend/agents/
 ├── makemytrip/
 │   ├── __init__.py
 │   ├── agent.py
-│   └── config.yaml
+│   ├── config.yaml
+│   ├── docs/
+│   │   └── DEBUG_BOT_DETECTION_2026-03-10.md   # full bot detection debug history
+│   └── instructions/
+│       ├── extractor_prompt.md      # main extraction (popup dismissal + STRICT RULES)
+│       ├── book_then_continue.md
+│       ├── search_form.md           # kept for reference; NOT in execution path
+│       └── ...
 ├── goibibo/
 │   ├── __init__.py
 │   ├── agent.py
@@ -66,15 +73,57 @@ Additional keys:
 |-----|-------------|
 | `city_codes` | Map of city name (lowercase) to IATA/code (e.g. `mumbai: BOM`). Used for URL construction. |
 | `max_steps_default` | Default `max_steps` for `nova.act()`; can be overridden by `NOVA_ACT_MAX_STEPS`. |
-| `class_codes` | Map of travel class to URL code (e.g. `economy: e`). Ixigo only — used in the `?class=` URL parameter. |
+| `class_codes` | Map of travel class to URL cabin code. Used by Ixigo (`?class=`) and MakeMyTrip (`&cabinClass=`). Cleartrip uses a separate `class_codes` key that maps to full words (`Economy`, `Business`). |
 
 > **Note:** `default_criteria` has been removed. Search criteria are now built at runtime from the structured `filters` dict via the `_filters_to_criteria(filters)` static method on each agent class. If `filters` is `None`, the method returns `"top 5 cheapest flights sorted by price ascending"`.
 
 **Steps:**
 
-- **`wait`** — Single instruction run once before extraction. Can be inline (`instruction`) or from a file (`instruction_file`, e.g. `instructions/wait.md`).
-- **`extraction`** — Instruction and `schema` (JSON Schema for the flight array). Cleartrip uses a **two-layer prompt**: `site_adapter_file` (stable Cleartrip UI knowledge) + `extractor_file` (task with `{{criteria}}`, `{{base_url}}`). The agent loads both and concatenates them at runtime so the extraction prompt stays small and site knowledge is reusable.
-- **Offers** (Cleartrip only) — When `fetch_offers=True`, after extraction the agent harvests itinerary URLs (combined `book_then_continue` act) and can run parallel or sequential offer extraction (e.g. fare summary first, then coupons; or select_fare_extract_coupons, skip add-ons, fill traveler, extract fare breakdown). Returns `{ "flights", "offers_analysis" }` when offers are requested. Each `offers_analysis` entry includes `fare_breakdown` (base_fare, taxes, convenience_fee, total_fare) when fare summary extraction succeeds (e.g. parallel coupons-only flow).
+- **`wait`** — Single instruction run once before extraction to let the results page fully load. Can be inline (`instruction`) or from a file (`instruction_file`).
+- **`extraction`** — Instruction and `schema` (JSON Schema for the flight array). Cleartrip uses a **two-layer prompt**: `site_adapter_file` (stable Cleartrip UI knowledge) + `extractor_file` (task prompt). MakeMyTrip uses a single file (`instruction_file: instructions/extractor_prompt.md`) with a self-contained prompt that also handles popup dismissal. The extraction schema uses `required` + `additionalProperties: false` to enforce strict field validation.
+- **Offers** (Cleartrip + MakeMyTrip) — When `fetch_offers=True`, after extraction the agent harvests itinerary URLs (combined `book_then_continue` act) then runs parallel offer extraction (fare summary first, then coupons). Returns `{ "flights", "offers_analysis" }`. Each `offers_analysis` entry includes `fare_breakdown` (base_fare, taxes, convenience_fee, total_fare) and `coupons`.
+
+**Direct URL approach (Cleartrip):**
+
+Cleartrip builds a direct search results URL and passes it as `starting_page` to `NovaAct` — no form-filling step is needed. The `_build_search_url()` helper constructs the URL from IATA codes (via `city_codes` map), a formatted date, and a cabin class code.
+
+- **Cleartrip URL format:** `/flights/results?from={FROM}&to={TO}&depart_date={DD}/{MM}/{YYYY}&adults=1&...&class={Economy|Business}`
+
+**SPA boot sequence (MakeMyTrip):**
+
+MakeMyTrip is a React Single-Page Application. The search URL format is:
+```
+/flight/search?itinerary={FROM}-{TO}-{DD}/{MM}/{YYYY}&tripType=O&paxType=A-1_C-0_I-0&intl=false&cabinClass={E|B|P|F}&lang=eng
+```
+
+However, `/flight/search?...` is a **server-side API endpoint** — cold-navigating to it returns a JSON/plain-text "200-OK" response, not the web UI. The route is only handled by the React router after the SPA JavaScript bundle has been loaded from the homepage.
+
+The MMT agent therefore uses a two-step navigation:
+1. `NovaAct(starting_page=homepage)` — loads the homepage, bootstrapping the SPA JS bundle
+2. `nova.page.wait_for_load_state("load")` — waits for the homepage to fully load (all scripts run, session cookies written)
+3. **Fingerprint masking** (see below) — registered before navigating away
+4. `nova.page.goto(url)` — triggers client-side routing to the search results page
+5. `nova.page.wait_for_load_state("domcontentloaded")` — waits for the search page DOM to settle
+
+Note: `user_data_dir=tmp_dir` (fresh profile per run) was tested but dropped — Nova Act's `launch_persistent_context` requires a pre-existing "Local State" file; a blank `tempfile.TemporaryDirectory()` lacks this.
+
+**Headless fingerprint masking (MakeMyTrip):**
+
+MMT's flight data API detects headless Chromium and blocks requests from it. Two signals are masked before calling `nova.page.goto(url)`:
+
+```python
+_REAL_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+nova.page.context.set_extra_http_headers({"User-Agent": _REAL_UA})
+nova.page.add_init_script(
+    f"Object.defineProperty(navigator, 'userAgent', {{get: () => '{_REAL_UA}'}});"
+    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+)
+```
+
+- `context.set_extra_http_headers` — overrides the UA for all HTTP requests in the context (including the `fetch()` calls the React app makes for flight data), replacing the default `"HeadlessChrome"` UA string
+- `page.add_init_script` — registered before `goto(url)`, runs inside the search page document before React scripts execute, overriding `navigator.webdriver` (normally `true` in headless Playwright) and `navigator.userAgent`
+
+For the complete bot-detection debug history, see [`agents/makemytrip/docs/DEBUG_BOT_DETECTION_2026-03-10.md`](../agents/makemytrip/docs/DEBUG_BOT_DETECTION_2026-03-10.md).
 
 ### Two-layer extraction (Cleartrip)
 
@@ -176,7 +225,7 @@ The test helper `validate_flight_schema(flights, search_date)` centralizes these
 ## Adding a new travel agent
 
 1. Create a package under `agents/`, e.g. `agents/newsite/`.
-2. Add **`config.yaml`** with `workflow_name`, `base_url`, `city_codes`, `max_steps_default`, and `steps` (at least `wait` + `extraction` with `instruction` and `schema`). Use `{{criteria}}` and `{{base_url}}` placeholders. Add `class_codes` if the site's URL uses a class code parameter (like Ixigo).
+2. Add **`config.yaml`** with `workflow_name`, `base_url`, `city_codes`, `max_steps_default`, and `steps` (at least `wait` + `extraction` with `instruction_file` and `schema`). Add `class_codes` if the site's URL uses a cabin-class code parameter (like Ixigo, MakeMyTrip). Use `required` + `additionalProperties: false` in extraction schema for strict validation.
 3. Add **`agent.py`** with:
    - `_filters_to_criteria(filters: dict | None) -> str` static method (copy pattern from Ixigo/MakeMyTrip)
    - `search(from_city, to_city, date, travel_class=”economy”, filters=None)` signature

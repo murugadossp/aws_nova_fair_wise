@@ -211,7 +211,7 @@ class TravelOrchestrator:
         await self._send({"type": "agent_start", "agent": name})
         try:
             kwargs = {}
-            if name == "cleartrip":
+            if name in {"cleartrip", "makemytrip"}:
                 kwargs["fetch_offers"] = True
             result = await _run_in_thread(
                 agent.search,
@@ -219,7 +219,8 @@ class TravelOrchestrator:
                 filters,
                 **kwargs,
             )
-            # Cleartrip can return list (extraction only) or dict with "flights" and optional "offers_analysis".
+            # Some travel agents can return list-only results, while richer phased agents
+            # return {"flights", "offers_analysis", "telemetry"}.
             if isinstance(result, dict) and "flights" in result:
                 flights = result["flights"]
                 offers_analysis = result.get("offers_analysis")

@@ -34,6 +34,7 @@ usage() {
   echo -e "    ${YELLOW}amazon${NC}       Amazon India product search          (Nova Act · browser)"
   echo -e "    ${YELLOW}flipkart${NC}     Flipkart product search              (Nova Act · browser)"
   echo -e "    ${YELLOW}mmt${NC}          MakeMyTrip flight search             (Nova Act · browser)"
+  echo -e "    ${YELLOW}mmt-itinerary${NC}  MakeMyTrip single itinerary probe  (Nova Act · browser)"
   echo -e "    ${YELLOW}cleartrip${NC}    Cleartrip flight search              (Nova Act · browser)"
   echo -e "    ${YELLOW}cleartrip-itinerary${NC}  Cleartrip single itinerary probe   (Nova Act · browser)"
   echo -e "    ${YELLOW}ixigo${NC}        Ixigo flight search                  (Nova Act · browser)"
@@ -133,6 +134,9 @@ case "$1" in
     ;;
   mmt|makemytrip)
     run_test "MakeMyTrip Agent"     "test_makemytrip_agent.py"
+    ;;
+  mmt-itinerary|mmt_itinerary|makemytrip-itinerary)
+    run_test "MakeMyTrip Single Itinerary" "test_makemytrip_itinerary.py"
     ;;
   cleartrip)
     run_test "Cleartrip Agent"      "test_cleartrip_agent.py"

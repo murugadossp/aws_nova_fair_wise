@@ -1,7 +1,18 @@
 workflow_name: "farewise-makemytrip"
 base_url: "https://www.makemytrip.com"
-default_criteria: "top 5 cheapest flight options"
 max_steps_default: 50
+
+class_codes:
+  economy: E
+  business: B
+  premium_economy: P
+  first: F
+offers_top_n: 1
+use_parallel_offers: true
+max_parallel_offers: 2
+collect_convenience_fee: false
+convenience_fee_probe_index: 0
+reuse_probe_convenience_fee: true
 
 city_codes:
   mumbai: BOM
@@ -34,24 +45,114 @@ city_codes:
 
 steps:
   wait:
-    instruction: "Wait for the flight listings to fully load. Do not click anything."
+    instruction: >-
+      Wait up to 10 seconds for flight listings to appear on the page.
+      Do NOT click REFRESH. Do NOT fill the search form. Do NOT click SEARCH.
+      Do NOT interact with anything at all. Simply wait, then finish this step.
+  apply_filters:
+    instruction_file: instructions/apply_filters.md
+    max_steps: 8
   extraction:
-    instruction: |
-      Extract flights from this MakeMyTrip search page that match: {{criteria}}.
-      For each flight return: airline, flight_number, departure (HH:MM), arrival (HH:MM), duration (Xh Ym), stops (integer), price (integer INR), url.
-      For url: use the full absolute link (must start with {{base_url}}/) that opens the booking or flight-details page for that flight when clicked. Do not use relative paths or # fragments.
-      Try to get up to 5 results. If you are running out of steps, return the flights you have collected so far (do not fail).
-      Return ONLY a valid JSON array sorted by price ascending.
+    instruction_file: instructions/extractor_prompt.md
     schema:
       type: array
       items:
         type: object
+        required:
+          - airline
+          - flight_number
+          - departure
+          - arrival
+          - duration
+          - stops
+          - price
+        additionalProperties: false
         properties:
-          airline: { type: string }
+          airline:       { type: string }
           flight_number: { type: string }
-          departure: { type: string }
-          arrival: { type: string }
-          duration: { type: string }
-          stops: { type: integer }
-          price: { type: integer }
-          url: { type: string }
+          departure:     { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+          arrival:       { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+          duration:      { type: string }
+          stops:         { type: integer, minimum: 0 }
+          price:         { type: integer, minimum: 0 }
+  book_then_continue:
+    instruction_file: instructions/book_then_continue.md
+    max_steps: 25
+  extract_coupons_from_booking_page:
+    instruction_file: instructions/extract_coupons_from_booking_page.md
+    max_steps: 25
+    schema:
+      type: array
+      items:
+        type: object
+        required: [code, description, discount]
+        additionalProperties: false
+        properties:
+          code: { type: string }
+          description: { type: string }
+          discount: { type: integer, minimum: 0 }
+  extract_fare_summary_booking:
+    instruction_file: instructions/extract_fare_summary_booking.md
+    max_steps: 20
+    schema:
+      type: object
+      required:
+        - base_fare
+        - taxes
+        - convenience_fee
+        - total_fare
+      additionalProperties: false
+      properties:
+        base_fare:
+          type: integer
+          minimum: 0
+        taxes:
+          type: integer
+          minimum: 0
+        convenience_fee:
+          type: integer
+          minimum: 0
+        total_fare:
+          type: integer
+          minimum: 0
+        fare_type:
+          type: string
+  payment_insurance_continue:
+    instruction_file: instructions/payment_insurance_continue.md
+    max_steps: 8
+  payment_skip_addons:
+    instruction_file: instructions/payment_skip_addons.md
+    max_steps: 10
+  payment_skip_addons_popup:
+    instruction_file: instructions/payment_skip_addons_popup.md
+    max_steps: 5
+  payment_contact_continue:
+    instruction_file: instructions/payment_contact_continue.md
+    max_steps: 12
+  payment_traveller_continue:
+    instruction_file: instructions/payment_traveller_continue.md
+    max_steps: 12
+  extract_fare_breakdown:
+    instruction_file: instructions/extract_fare_breakdown.md
+    max_steps: 25
+    schema:
+      type: object
+      required:
+        - base_fare
+        - taxes
+        - convenience_fee
+        - total_fare
+      additionalProperties: false
+      properties:
+        base_fare:
+          type: integer
+          minimum: 0
+        taxes:
+          type: integer
+          minimum: 0
+        convenience_fee:
+          type: integer
+          minimum: 0
+        total_fare:
+          type: integer
+          minimum: 0
