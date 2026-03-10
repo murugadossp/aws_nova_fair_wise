@@ -97,10 +97,6 @@ steps:
             type: integer
             minimum: 0
     
-  book_flight:
-    instruction_file: instructions/book_flight.md
-    max_steps: 25
-
   book_then_continue:
     instruction_file: instructions/book_then_continue.md
     max_steps: 25
@@ -118,27 +114,6 @@ steps:
           code: { type: string }
           description: { type: string }
           discount: { type: integer, minimum: 0 }
-
-  select_fare_extract_coupons:
-    instruction_file: instructions/select_fare_extract_coupons.md
-    max_steps: 25
-    schema:
-      type: array
-      items:
-        type: object
-        required:
-          - code
-          - description
-          - discount
-        additionalProperties: false
-        properties:
-          code:
-            type: string
-          description:
-            type: string
-          discount:
-            type: integer
-            minimum: 0
 
   payment_insurance_continue:
     instruction_file: instructions/payment_insurance_continue.md
