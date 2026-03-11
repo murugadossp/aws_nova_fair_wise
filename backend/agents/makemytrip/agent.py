@@ -375,6 +375,97 @@ class MakeMyTripAgent:
                 }
 
     @staticmethod
+    def _playwright_click_view_prices_and_book_now(
+        page, airline: str, flight_number: str, price: int
+    ) -> bool:
+        """Click View Prices → wait for fare popup → click first BOOK NOW via direct Playwright.
+
+        Replaces the former nova.act(book_then_continue) approach which caused
+        ActExceededMaxStepsError: the model looped wait("0") until max_steps ran out
+        before the 30-second "Getting More Fares..." popup ever resolved.
+
+        Direct Playwright clicks trigger Akamai's per-click bot challenge natively
+        (the browser handles it in the same authenticated session), so the fare API
+        succeeds and the popup loads — confirmed by the diagnostic test run.
+        """
+        # ── Step 1: Click "View Prices" on the target flight card ─────────────
+        clicked = False
+
+        # Try card-scoped selectors first (avoids accidentally clicking a different flight).
+        # MMT uses React CSS modules so class names are hashed; rely on :has-text() instead.
+        for card_sel in [
+            f"[class*='listingCard']:has-text('{flight_number}')",
+            f"[class*='flightItem']:has-text('{flight_number}')",
+            f"[class*='flight']:has-text('{flight_number}')",
+        ]:
+            try:
+                card = page.locator(card_sel).first
+                card.wait_for(timeout=3000, state="visible")
+                for btn_text in ["View Prices", "Book"]:
+                    try:
+                        btn = card.locator(f"text={btn_text}").first
+                        btn.wait_for(timeout=2000, state="visible")
+                        btn.scroll_into_view_if_needed()
+                        btn.click()
+                        log.info("Harvest: clicked '%s' in card '%s'", btn_text, card_sel)
+                        clicked = True
+                        break
+                    except Exception:
+                        continue
+                if clicked:
+                    break
+            except Exception:
+                continue
+
+        if not clicked:
+            # Page-level fallback: first visible "View Prices" button.
+            # Safe for offers_top_n=1 (cheapest flight is at the top of the filtered list).
+            for sel in ["text=View Prices", "[class*='viewPrice']", "button:has-text('Book')"]:
+                try:
+                    loc = page.locator(sel).first
+                    loc.wait_for(timeout=5000, state="visible")
+                    loc.scroll_into_view_if_needed()
+                    loc.click()
+                    log.info("Harvest: clicked View Prices via fallback selector '%s'", sel)
+                    clicked = True
+                    break
+                except Exception:
+                    continue
+
+        if not clicked:
+            log.warning("Harvest: could not click View Prices for %s %s", airline, flight_number)
+            return False
+
+        # ── Step 2: Wait for fare popup to resolve and show BOOK NOW ──────────
+        # The popup initially shows "Getting More Fares..." (10–30s), then reveals
+        # CLASSIC | VALUE | FARE BY MAKEMYTRIP | FLEX columns, each with BOOK NOW.
+        log.info("Harvest: waiting for BOOK NOW in fare popup (up to 45s)...")
+        try:
+            page.wait_for_selector("text=BOOK NOW", timeout=45000, state="visible")
+            log.info("Harvest: BOOK NOW button appeared")
+        except Exception as e:
+            log.warning("Harvest: BOOK NOW never appeared for %s %s: %s", airline, flight_number, e)
+            return False
+
+        # ── Step 3: Click the FIRST BOOK NOW (CLASSIC = leftmost / cheapest tier) ──
+        try:
+            book_now = page.locator("text=BOOK NOW").first
+            book_now.scroll_into_view_if_needed()
+            book_now.click()
+            log.info("Harvest: clicked first BOOK NOW button")
+        except Exception as e:
+            log.warning("Harvest: failed to click BOOK NOW for %s %s: %s", airline, flight_number, e)
+            return False
+
+        # ── Step 4: Wait for booking page DOM to be ready ─────────────────────
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+            sleep(2)  # let React render the booking review before URL capture
+        except Exception:
+            pass  # non-fatal — capture URL regardless
+        return True
+
+    @staticmethod
     def _harvest_itinerary_urls(
         nova,
         items: list[dict],
@@ -384,10 +475,6 @@ class MakeMyTripAgent:
         top_n = _CONFIG.get("offers_top_n", 1)
         targets = sorted(items, key=lambda x: x.get("price", float("inf")))[:top_n]
         harvested: list[dict] = []
-        combined_cfg = _CONFIG["steps"].get("book_then_continue")
-        if not combined_cfg:
-            log.warning("MMT book_then_continue step missing; cannot harvest URLs")
-            return harvested
         for idx, flight in enumerate(targets):
             airline = flight["airline"]
             flight_number = flight["flight_number"]
@@ -401,13 +488,19 @@ class MakeMyTripAgent:
                     wait_instruction = (_CONFIG["steps"].get("wait") or {}).get("instruction")
                     if wait_instruction:
                         nova.act(wait_instruction)
-                instruction = _sub(
-                    _get_single_instruction(combined_cfg),
-                    airline=airline,
-                    flight_number=flight_number,
-                    price=str(price),
+
+                # Use direct Playwright clicks — bypasses Nova Act model which exhausted
+                # max_steps looping wait("0") before the 30s fare popup resolved.
+                success = MakeMyTripAgent._playwright_click_view_prices_and_book_now(
+                    nova.page, airline, flight_number, price
                 )
-                nova.act(instruction, max_steps=combined_cfg.get("max_steps", 12))
+                if not success:
+                    log.warning(
+                        "Harvest [%d/%d]: Playwright harvest failed for %s %s",
+                        idx + 1, len(targets), airline, flight_number,
+                    )
+                    continue
+
                 itinerary_url = nova.page.url
                 if itinerary_url and itinerary_url.startswith("http"):
                     harvested.append({

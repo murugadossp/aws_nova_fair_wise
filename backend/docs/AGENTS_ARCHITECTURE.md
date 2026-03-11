@@ -81,7 +81,9 @@ Additional keys:
 
 - **`wait`** — Single instruction run once before extraction to let the results page fully load. Can be inline (`instruction`) or from a file (`instruction_file`).
 - **`extraction`** — Instruction and `schema` (JSON Schema for the flight array). Cleartrip uses a **two-layer prompt**: `site_adapter_file` (stable Cleartrip UI knowledge) + `extractor_file` (task prompt). MakeMyTrip uses a single file (`instruction_file: instructions/extractor_prompt.md`) with a self-contained prompt that also handles popup dismissal. The extraction schema uses `required` + `additionalProperties: false` to enforce strict field validation.
-- **Offers** (Cleartrip + MakeMyTrip) — When `fetch_offers=True`, after extraction the agent harvests itinerary URLs (combined `book_then_continue` act) then runs parallel offer extraction (fare summary first, then coupons). Returns `{ "flights", "offers_analysis" }`. Each `offers_analysis` entry includes `fare_breakdown` (base_fare, taxes, convenience_fee, total_fare) and `coupons`.
+- **Offers** (Cleartrip + MakeMyTrip) — When `fetch_offers=True`, after extraction the agent harvests itinerary URLs then runs parallel offer extraction (fare summary first, then coupons). Returns `{ "flights", "offers_analysis" }`. Each `offers_analysis` entry includes `fare_breakdown` (base_fare, taxes, convenience_fee, total_fare), `fare_type`, and `coupons`.
+  - **Cleartrip:** harvest uses `nova.act(book_then_continue)` to click Book → captures a real `/flights/review/...` URL. Extraction sessions open that URL directly.
+  - **MakeMyTrip:** harvest uses `_playwright_click_view_prices_and_book_now()` — a direct Playwright method (not `nova.act`) that clicks "View Prices" → waits for BOOK NOW popup → clicks first BOOK NOW. MMT's booking page is React state-based: `page.url` stays at the search URL after clicking. Extraction sessions therefore open at the search URL and navigate to the booking page internally.
 
 **Direct URL approach (Cleartrip):**
 
@@ -98,30 +100,49 @@ MakeMyTrip is a React Single-Page Application. The search URL format is:
 
 However, `/flight/search?...` is a **server-side API endpoint** — cold-navigating to it returns a JSON/plain-text "200-OK" response, not the web UI. The route is only handled by the React router after the SPA JavaScript bundle has been loaded from the homepage.
 
-The MMT agent therefore uses a two-step navigation:
+The MMT agent uses this boot sequence (order is critical):
 1. `NovaAct(starting_page=homepage)` — loads the homepage, bootstrapping the SPA JS bundle
-2. `nova.page.wait_for_load_state("load")` — waits for the homepage to fully load (all scripts run, session cookies written)
-3. **Fingerprint masking** (see below) — registered before navigating away
-4. `nova.page.goto(url)` — triggers client-side routing to the search results page
-5. `nova.page.wait_for_load_state("domcontentloaded")` — waits for the search page DOM to settle
+2. `nova.page.wait_for_load_state("load")` — waits for the homepage to fully load (session cookies written)
+3. **Akamai `_abck` warm-up** — `wait_for_load_state("networkidle", timeout=6000)` + `sleep(3)`: Akamai's sensor JS runs POST-`window.onload` and writes the `_abck` challenge cookie via XHR over 2–4s; navigating before it completes causes NETWORK PROBLEM on the flight data API
+4. **Fingerprint masking** — 10 signals via `add_init_script` + `set_extra_http_headers` (see below)
+5. **Humanized mouse movement** — two `mouse.move()` calls on the homepage; Akamai logs pointer events and scores sessions with zero events as bot-like
+6. `nova.page.goto(url)` — triggers client-side routing to the search results page
+7. `nova.page.wait_for_load_state("domcontentloaded")`
 
 Note: `user_data_dir=tmp_dir` (fresh profile per run) was tested but dropped — Nova Act's `launch_persistent_context` requires a pre-existing "Local State" file; a blank `tempfile.TemporaryDirectory()` lacks this.
 
-**Headless fingerprint masking (MakeMyTrip):**
+**Headless fingerprint masking (MakeMyTrip — 10 signals):**
 
-MMT's flight data API detects headless Chromium and blocks requests from it. Two signals are masked before calling `nova.page.goto(url)`:
+MMT uses Akamai Bot Manager. The agent masks 10 signals across HTTP and JS layers:
 
-```python
-_REAL_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-nova.page.context.set_extra_http_headers({"User-Agent": _REAL_UA})
-nova.page.add_init_script(
-    f"Object.defineProperty(navigator, 'userAgent', {{get: () => '{_REAL_UA}'}});"
-    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
-)
-```
+| Layer | Signal | Playwright API |
+|-------|--------|---------------|
+| HTTP | `User-Agent` (replaces `HeadlessChrome`) | `set_extra_http_headers` |
+| HTTP | `sec-ch-ua`, `sec-ch-ua-mobile`, `sec-ch-ua-platform` Client Hints | `set_extra_http_headers` |
+| JS | `navigator.webdriver` → `undefined` | `add_init_script` |
+| JS | `navigator.userAgent` → real Chrome/122 UA | `add_init_script` |
+| JS | `window.chrome` → realistic mock (runtime, app, csi, loadTimes) | `add_init_script` |
+| JS | `navigator.plugins` → 5 named PDF plugin entries | `add_init_script` |
+| JS | `navigator.languages` → `['en-US', 'en']` | `add_init_script` |
+| JS | `navigator.hardwareConcurrency` → 8 | `add_init_script` |
+| JS | `navigator.deviceMemory` → 8 | `add_init_script` |
+| JS | `window.outerWidth/outerHeight`, `screen.colorDepth/pixelDepth` | `add_init_script` |
+| JS | `navigator.permissions.query('notifications')` → `'default'` | `add_init_script` |
+| JS | `HTMLCanvasElement.toDataURL` → 1-bit per-session noise | `add_init_script` |
 
-- `context.set_extra_http_headers` — overrides the UA for all HTTP requests in the context (including the `fetch()` calls the React app makes for flight data), replacing the default `"HeadlessChrome"` UA string
-- `page.add_init_script` — registered before `goto(url)`, runs inside the search page document before React scripts execute, overriding `navigator.webdriver` (normally `true` in headless Playwright) and `navigator.userAgent`
+**MakeMyTrip Phase 2 harvest — direct Playwright approach:**
+
+After Phase 1 extraction, Phase 2 clicks "View Prices" on the cheapest flight to reach the booking page. MMT fires a **per-click Akamai bot challenge** at `flights-cb.makemytrip.com` (a separate subdomain with its own Akamai policy) the moment "View Prices" is clicked. The fare popup ("Getting More Fares...") resolves only when this challenge passes.
+
+Using `nova.act()` for this click caused `ActExceededMaxStepsError` because the model looped `wait("0")` — checking the popup state with zero real dwell, exhausting the step budget before the fare API could respond. Using direct Playwright `page.locator().click()` passes the challenge cleanly in the same warm session.
+
+The harvest method `_playwright_click_view_prices_and_book_now(page, airline, flight_number, price)`:
+1. Clicks "View Prices" using Playwright locators (card-scoped `:has-text(flight_number)`, fallback to first on page)
+2. `page.wait_for_selector("text=BOOK NOW", timeout=45000)` — popup resolves typically in < 1s
+3. Clicks first BOOK NOW (CLASSIC / cheapest tier)
+4. Waits for booking page DOM
+
+**Note:** MMT's booking page URL is not separately addressable — `page.url` stays at the search URL after clicking BOOK NOW (React state-based routing). Phase 5 extraction sessions open at the search URL and navigate to the booking page internally.
 
 For the complete bot-detection debug history, see [`agents/makemytrip/docs/DEBUG_BOT_DETECTION_2026-03-10.md`](../agents/makemytrip/docs/DEBUG_BOT_DETECTION_2026-03-10.md).
 

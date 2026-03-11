@@ -77,7 +77,7 @@ steps:
           price:         { type: integer, minimum: 0 }
   book_then_continue:
     instruction_file: instructions/book_then_continue.md
-    max_steps: 25
+    max_steps: 35
   extract_coupons_from_booking_page:
     instruction_file: instructions/extract_coupons_from_booking_page.md
     max_steps: 25

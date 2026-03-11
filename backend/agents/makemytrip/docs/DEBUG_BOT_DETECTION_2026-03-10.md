@@ -245,11 +245,121 @@ Canvas noise approach: a one-bit XOR flip on the top-left pixel before `toDataUR
 
 ---
 
-## If Attempt 7 also fails
+## Phase 2 harvest investigation — 2026-03-11
 
-Remaining Akamai signals not fixable via `add_init_script`:
+### What Phase 2 needed to do
 
-- **Datacenter IP (most likely root cause if all JS fixes fail)** — AWS IP ranges are on Akamai's block list. No amount of JS patching can change the source IP. Requires: residential proxy, or route Nova Act traffic through a consumer ISP IP. This is the "nuclear option" — if the IP is blocked, Akamai rejects the request before any JS even runs.
-- **TLS/JA3 fingerprinting** — The TLS ClientHello message (cipher suite order, extensions) is set at the Chromium binary level. Playwright's Chromium has different TLS fingerprint from real Chrome. Cannot be fixed via `add_init_script`. Requires `playwright-stealth` patches or a different binary.
-- **`playwright-stealth` package** — most comprehensive solution for JS signals: `pip install playwright-stealth`, then `stealth_sync(nova.page)` after `wait_for_load_state("load")`. Covers 20+ vectors including WebGL, font enumeration, and more.
-- **Hackathon pivot** — if MMT remains blocked after Attempt 7, focus demo on Cleartrip + EaseMyTrip (lower WAF barriers) and note Akamai bypass as a roadmap item.
+After Phase 1 extracts flight listings, Phase 2 harvests the booking URL for the cheapest flight:
+1. Find the flight card on the search results page
+2. Click "View Prices" → MMT shows a fare comparison popup titled "Getting More Fares..."
+3. Wait for the popup to resolve and show fare tiers (CLASSIC | VALUE | FARE BY MAKEMYTRIP | FLEX)
+4. Click the first "BOOK NOW" button (CLASSIC = cheapest tier)
+5. Land on the booking review page and capture its URL
+
+The original implementation used `nova.act(book_then_continue.md)` — a Nova Act instruction asking the model to find, click, wait, and navigate.
+
+### Why nova.act failed for Phase 2
+
+The model called `wait("0")` in a tight loop — checking the popup state after zero real dwell. Since `wait("0")` costs exactly one Nova Act step, all 25 steps were consumed in < 1 second of real time. The "Getting More Fares..." popup requires 10–30 seconds for the fare API to respond, so the model never saw it resolve.
+
+**First fix attempt (instruction-level):** Rewrote `book_then_continue.md` to use explicit `wait("15")` calls (2× = 30s of dwell, costing only 2 steps). Increased `max_steps: 25 → 35` to cover the wait budget.
+
+**Result:** Model correctly waited 45s (3× `wait("15")`) but popup STILL showed "Getting More Fares..." — BOOK NOW buttons never appeared.
+
+### Network diagnostic — 2026-03-11 07:41
+
+Created `tests/test_mmt_fare_api_diagnostic.py` — a standalone script that:
+- Boots MMT exactly like agent.py (Akamai warm-up + fingerprint masking + `goto(url)`)
+- Attaches `page.on("request")` and `page.on("response")` listeners
+- Clicks "View Prices" using **direct Playwright** (`page.locator("text=View Prices").first.click()`)
+- Waits 35 seconds and logs all captured API traffic
+
+**Key findings from the diagnostic:**
+
+| Finding | Detail |
+|---------|--------|
+| Fare API endpoint | `GET https://flights-cb.makemytrip.com/api/fare-recomendations/stream?rKey=RKEY:15103cdf-af96-426a-ab08-00143a02695d:84_0&pax=A-1_C-0_I-0&crId=...` |
+| Second Akamai challenge | `POST https://www.makemytrip.com/E3ikd27e0/fAgBZcO/...` with `sensor_data` body — fires **on click** of "View Prices", not on page load |
+| SSE streaming | `fare-recomendations/stream` uses Server-Sent Events — `response.text()` blocks indefinitely on open stream, explaining 0 responses captured |
+| Separate subdomain | `flights-cb.makemytrip.com` has its own Akamai policy, independent of `www.makemytrip.com` |
+
+**Critical observation:** The user saw the diagnostic's headed browser load the popup **successfully** — BOOK NOW buttons appeared. The diagnostic used `page.locator("text=View Prices").first.click()` (direct Playwright), while the main agent used `nova.act()`. This was the decisive clue.
+
+### Root cause of Phase 2 failure
+
+Akamai fires a **per-click bot challenge** the moment "View Prices" is clicked:
+- `POST /E3ikd27e0/fAgBZcO/...` with fresh `sensor_data` payload
+- The challenge is evaluated by Akamai's edge against the browser's fingerprint at click time
+- In the same warm session with fingerprint masking active, the browser passes the challenge automatically
+- When `nova.act()` drives the click, the model's intermediate steps (snapshot-taking, scrolling, highlighting) generate additional browser activity that may alter the fingerprint between the homepage warm-up and the click moment
+- Direct Playwright click fires the challenge cleanly in the same session state → passes → fare API responds → popup loads
+
+---
+
+## Phase 2 harvest fix — 2026-03-11 ✅
+
+### Approach: hybrid Playwright + Nova Act
+
+Replace `nova.act(book_then_continue.md)` with a new static method `_playwright_click_view_prices_and_book_now(page, airline, flight_number, price)` that uses direct Playwright calls for the click sequence, keeping Nova Act only for the extraction steps.
+
+```python
+@staticmethod
+def _playwright_click_view_prices_and_book_now(page, airline, flight_number, price) -> bool:
+    # Step 1: click "View Prices" on the target flight card
+    # — tries card-scoped :has-text(flight_number) selectors first,
+    #   falls back to first "text=View Prices" on page (safe for offers_top_n=1)
+
+    # Step 2: wait for BOOK NOW button (up to 45s)
+    page.wait_for_selector("text=BOOK NOW", timeout=45000, state="visible")
+
+    # Step 3: click first BOOK NOW (CLASSIC = leftmost / cheapest tier)
+    page.locator("text=BOOK NOW").first.click()
+
+    # Step 4: wait for booking page DOM
+    page.wait_for_load_state("domcontentloaded", timeout=15000)
+    sleep(2)
+    return True
+```
+
+`_harvest_itinerary_urls()` calls this method instead of `nova.act()`. If it returns `False`, the harvest entry is skipped (logged as warning).
+
+### Test result (2026-03-11 07:52–07:56)
+
+```
+Phase 1:  7 non-stop BOM→DEL flights extracted ✅
+Filters:  "6 AM to 12 PM" applied (20471ms) ✅
+Harvest:  IndiGo 6E 5263 ₹5000 — 12602ms
+          BOOK NOW appeared in < 1s ✅
+Offer:    fare_type=NON-REFUNDABLE
+          base_fare=4500 taxes=1200 convenience_fee=0 total_fare=5700 ✅
+```
+
+### Architectural note on MMT booking URLs
+
+Unlike Cleartrip (which returns a dedicated `/flights/review/...` URL after clicking Book), MMT's booking page is **React state-based** — after clicking BOOK NOW, `page.url` stays at the search URL. The `itinerary_url` captured in `_harvest_itinerary_urls()` is therefore the same as the search URL.
+
+The Phase 5 extraction sessions (`_extract_coupon_offer_branch`) open a fresh Nova Act session at the search URL and navigate to the booking page internally (running the `book_then_continue` flow again via the model). This adds ~48s overhead per extraction session but correctly reaches the booking review page.
+
+Future optimization: stay in the harvest session after clicking BOOK NOW and run fare + coupon extraction without opening a separate session.
+
+---
+
+## Summary of the fix history
+
+| Attempt | Code change | Symptom fixed | New symptom revealed |
+|---------|------------|---------------|---------------------|
+| 1 | Form filling | — | Bot detection blocks form interaction |
+| 2 | Direct URL as `starting_page` | No form filling | `200-OK` — SPA API endpoint, not the UI |
+| 3 | `starting_page=homepage` + immediate `goto(url)` | SPA loads, form populated | NETWORK PROBLEM — homepage load interrupted (race) |
+| 4 | `wait_for_load_state("load")` before `goto(url)` | Cookies/session initialized | NETWORK PROBLEM still — webdriver + UA signals |
+| 5 | UA masking + `webdriver=undefined` | REFRESH loop stopped (1-action budget) | REFRESH → "200-OK" regression; NETWORK PROBLEM still shown |
+| 6 | `window.chrome` + `plugins` + `sec-ch-ua` + no REFRESH + drift guard | Page-drift fixed | NETWORK PROBLEM still — Akamai `_abck` cookie not warm |
+| 7 | `_abck` warm-up (networkidle+sleep3) + mouse moves + hardwareConcurrency + canvas noise + permissions | **Phase 1 NETWORK PROBLEM FIXED** ✅ | Phase 2 harvest: "Getting More Fares..." popup stuck loading |
+| UI filters | `apply_filters` step + `_window_to_mmt_slot()` mapping | Time-slot filter buttons clicked ✅ | — |
+| Phase 2 fix | `_playwright_click_view_prices_and_book_now()` replacing `nova.act(book_then_continue)` | **Phase 2 harvest FIXED** ✅ | Phase 5 extraction sessions open at search URL (~48s overhead) |
+
+**Current status (2026-03-11): Full pipeline PASSING ✅**
+- Phase 1: search extraction (7 non-stop flights)
+- UI filters: time-slot button clicking
+- Phase 2: harvest with direct Playwright click
+- Phase 5: fare summary + coupon extraction (separate Nova Act session)
