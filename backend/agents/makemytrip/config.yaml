@@ -8,7 +8,7 @@ class_codes:
   premium_economy: P
   first: F
 offers_top_n: 1
-startup_retries: 2   # max retries on ERR_HTTP2/ERR_CONNECTION startup failures
+startup_retries: 3   # max retries on ERR_HTTP2/ERR_CONNECTION startup failures (backoff: 15s/30s/45s)
 use_parallel_offers: true
 max_parallel_offers: 2
 collect_convenience_fee: false

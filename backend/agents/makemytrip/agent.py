@@ -30,6 +30,12 @@ log = get_logger(__name__)
 with open(_AGENT_DIR / "config.yaml", encoding="utf-8") as _f:
     _CONFIG = yaml.safe_load(_f)
 
+# Force HTTP/1.1 for all Chromium connections. Akamai can send HTTP/2
+# RST_STREAM / GOAWAY for bot-fingerprinted sessions; --disable-http2 tells
+# Chromium to advertise only "http/1.1" in TLS ALPN, so the HTTP/2 rejection
+# path is never reached. setdefault preserves any user-supplied override.
+os.environ.setdefault("NOVA_ACT_BROWSER_ARGS", "--disable-http2")
+
 
 def _sub(s: str, **kwargs: str) -> str:
     for k, v in kwargs.items():
@@ -610,13 +616,23 @@ class MakeMyTripAgent:
             # The React router handles the route only after the JS bundle is loaded from the root.
             homepage = _CONFIG["base_url"] + "/"
             with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf, \
-                    NovaAct(workflow=wf, starting_page=homepage, headless=headless, tty=False,
+                    NovaAct(workflow=wf, starting_page="about:blank", headless=headless, tty=False,
                             ignore_https_errors=True) as nova:
-                log.debug("Nova Act browser started for makemytrip.com (workflow=%s)", workflow_name)
+                log.debug("Nova Act browser started — navigating to makemytrip.com (workflow=%s)", workflow_name)
 
-                # Wait for the homepage to finish loading before navigating away.
-                # MMT sets session cookies and auth tokens during homepage load; without this wait
-                # goto(url) fires before cookies are written, and the flight API rejects the request.
+                # about:blank is used as the NovaAct starting_page to decouple Nova Act's
+                # internal Playwright startup from any MMT-related network failure. Previously,
+                # starting_page=homepage caused Nova Act to raise StartFailed (uncatchable at
+                # our level) when Akamai rejected the HTTP/2 handshake. With about:blank, Nova
+                # Act startup is guaranteed; the first MMT navigation is under our control and
+                # any ERR_HTTP2 error propagates to our except block where we can retry it.
+                nova.page.wait_for_load_state("load")   # about:blank — returns immediately
+
+                # First real HTTP connection to makemytrip.com. If Akamai rejects this with
+                # ERR_HTTP2_PROTOCOL_ERROR, the exception propagates to our retry block.
+                # The --disable-http2 browser flag should prevent this by downgrading to HTTP/1.1.
+                log.debug("MMT: navigating to homepage (%s)", homepage)
+                nova.page.goto(homepage)
                 nova.page.wait_for_load_state("load")
 
                 # ── Akamai _abck warm-up ──────────────────────────────────────────────────
@@ -921,7 +937,9 @@ class MakeMyTripAgent:
                 or "net::" in str(e)
             )
             if _is_startup_err and _startup_attempt < _startup_retries:
-                _wait_s = (_startup_attempt + 1) * 5
+                # Use longer backoffs than 5/10s: Akamai IP blocks typically persist
+                # for tens of seconds; short retries just refresh the block timer.
+                _wait_s = (_startup_attempt + 1) * 15  # 15s → 30s → 45s
                 log.warning(
                     "MMT: Nova Act startup error (attempt %d/%d), retry in %ds: %s",
                     _startup_attempt + 1, _startup_retries + 1, _wait_s, e,
