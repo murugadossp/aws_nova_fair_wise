@@ -568,6 +568,7 @@ class MakeMyTripAgent:
         travel_class: str = "economy",
         filters: dict | None = None,
         fetch_offers: bool = False,
+        _startup_attempt: int = 0,
     ) -> list[dict] | dict:
         log.info(
             "Searching MakeMyTrip: %s→%s date=%s class=%s filters=%s fetch_offers=%s",
@@ -908,4 +909,26 @@ class MakeMyTripAgent:
                 return {"telemetry": telemetry, "flights": results, "offers_analysis": []}
             return results
         except Exception as e:
+            # Retry on transient Nova Act startup failures (ERR_HTTP2_PROTOCOL_ERROR, etc.).
+            # These occur at the TCP/TLS layer before any page logic runs and are often
+            # transient (Akamai connection-level rate limit, server-side HTTP/2 reset).
+            # We retry up to startup_retries times with increasing backoff.
+            _startup_retries = int(_CONFIG.get("startup_retries", 2))
+            _is_startup_err = (
+                "StartFailed" in type(e).__name__
+                or "ERR_HTTP2" in str(e)
+                or "ERR_CONNECTION" in str(e)
+                or "net::" in str(e)
+            )
+            if _is_startup_err and _startup_attempt < _startup_retries:
+                _wait_s = (_startup_attempt + 1) * 5
+                log.warning(
+                    "MMT: Nova Act startup error (attempt %d/%d), retry in %ds: %s",
+                    _startup_attempt + 1, _startup_retries + 1, _wait_s, e,
+                )
+                sleep(_wait_s)
+                return self.search(
+                    from_city, to_city, date, travel_class, filters, fetch_offers,
+                    _startup_attempt=_startup_attempt + 1,
+                )
             return ActExceptionHandler.handle(e, "MakeMyTrip", context)
