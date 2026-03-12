@@ -1,6 +1,8 @@
-# Ixigo Agent — Search URL and Filters
+# Ixigo Agent — Search URL, Filters, and Bot-Detection
 
-This document describes how the Ixigo agent builds the flight search URL and applies filters. The orchestrator passes the same input shape to all travel agents; Ixigo encodes **all filters in the search URL** (no UI pre_filter step).
+This document describes how the Ixigo agent builds the flight search URL, applies
+filters, and defeats bot detection. The orchestrator passes the same input shape to
+all travel agents.
 
 ---
 
@@ -25,15 +27,18 @@ This document describes how the Ixigo agent builds the flight search URL and app
 
 ---
 
-## 2. Ixigo-specific behaviour: form-fill flow (like a real user)
+## 2. Flow — SPA boot + direct URL navigation
 
-The agent **does not** open a direct results URL. It mimics a user step by step:
+The agent uses a two-step navigation strategy to avoid bot detection:
 
-1. **Open the base URL** (`search_form_url` from config, e.g. `https://www.ixigo.com`).
-2. **Fill the search form:** Select source city, destination city, one-way, and date (instruction: `instructions/fill_search_form.md`), then click Search.
-3. **After the results page loads:** One combined act to wait for load and extract flights (`instructions/wait_and_extract.md`).
-
-**Flow:** Open base URL → act: fill form (source, destination, one-way, date) + search → act: wait + extract flights. All instructions are in `.md` files referenced from `config.yaml`.
+1. **Boot the SPA at the homepage** (`https://www.ixigo.com/`) — this loads the React
+   JS bundle and initializes session cookies.
+2. **Apply bot-detection countermeasures** — UA masking, JS fingerprint overrides,
+   sensor warm-up, mouse movement (see section 6).
+3. **Navigate to the pre-filtered search URL** via `page.goto()` — the JavaScript
+   router handles the route since the SPA is already running.
+4. **Wait step** — a dedicated Nova Act instruction waits for flight listings to render.
+5. **Extract** — a separate Nova Act instruction extracts up to 5 flights.
 
 ---
 
@@ -43,53 +48,91 @@ Base path: `https://www.ixigo.com/search/result/flight`
 
 | Param     | Values / format | When added |
 |-----------|------------------|------------|
-| `from`    | IATA code (e.g. HYD, BLR) | Always |
+| `from`    | IATA code (e.g. BOM, BLR) | Always |
 | `to`      | IATA code | Always |
-| `date`    | DDMMYYYY (e.g. `10062026` for 10 Jun 2026) | Always |
+| `date`    | DDMMYYYY (e.g. `18032026` for 18 Mar 2026) | Always |
 | `adults`  | 1 | Always |
 | `children`| 0 | Always |
 | `infants` | 0 | Always |
-| `class`   | `e` \| `b` \| `f` \| `pe` (economy, business, first, premium economy) | Always |
-| `source`  | `Search+Form` | Always |
+| `class`   | `e` \| `b` \| `p` \| `f` (economy, business, premium economy, first) | Always |
+| `intl`    | `n` | Always |
+| `sort_type` | `cheapest` \| `quickest` \| `earliest` \| `best` | Always (default `cheapest`) |
+| `stops`   | Integer (e.g. `0` for non-stop) | When `max_stops` filter is set |
+| `takeOff` | Comma-separated bucket values (e.g. `EARLY_MORNING,MORNING`) | When `departure_window` filter is set |
+| `landing` | Comma-separated bucket values | When `arrival_window` filter is set |
 
-**Note:** `stops`, `takeOff`, and `landing` are **not** added to the URL so loading mimics a user who only selected source, destination and date. Filtering (e.g. by departure time or stops) can be applied later by the normalizer or by adding params back if needed.
+**sort_type mapping** from planner `sort_by`: `price` → `cheapest`, `duration` → `quickest`, `departure` → `earliest`; default `cheapest`.
+
+**Wait strategy:** The agent uses a dynamic wait keyed to the flight list container so it can proceed as soon as results are in the DOM (no fixed 5s delay). Config uses the stable Ixigo selector `[data-testid='flight-list']` and `wait_for_selector_timeout_ms` (e.g. 15000). If the selector fails or times out, the agent falls back to a short static sleep so the run still completes. This avoids scraping skeleton loaders and reduces dead time on fast connections.
+
+**Reference selectors (Ixigo DOM):** Main list `[data-testid='flight-list']`, individual card `.flight-card` or `[data-testid='flight-card']`, container `.search-results-container`.
 
 ---
 
 ## 4. Time bucket mapping
 
-`departure_window` and `arrival_window` are `["HH:MM", "HH:MM"]` ranges. The agent maps the overlapping time buckets to Ixigo’s URL values using `config.yaml` `time_buckets` (each entry has `label`, `start`, `end`, `ixigo_value`).
+`departure_window` and `arrival_window` are `["HH:MM", "HH:MM"]` ranges. The agent
+maps overlapping time buckets to Ixigo's URL values using `config.yaml` `time_buckets`.
 
-| Bucket (label)   | Time range  | Ixigo param value |
-|------------------|-------------|--------------------|
-| Early morning    | 00:00–08:00 | `EARLY_MORNING`    |
-| Morning          | 08:00–12:00 | `MORNING`          |
-| Afternoon        | 12:00–16:00 | `AFTERNOON`        |
-| Evening          | 16:00–20:00 | `EVENING`          |
-| Night            | 20:00–24:00 | `NIGHT`            |
+| Bucket (label)   | Time range (minutes) | Ixigo param value |
+|------------------|----------------------|-------------------|
+| Early morning    | 0 - 480 (00:00-08:00)   | `EARLY_MORNING` |
+| Morning          | 480 - 720 (08:00-12:00)  | `MORNING` |
+| Afternoon        | 720 - 960 (12:00-16:00)  | `AFTERNOON` |
+| Evening          | 960 - 1200 (16:00-20:00) | `EVENING` |
+| Night            | 1200 - 1440 (20:00-24:00)| `NIGHT` |
 
-Overlap logic: a window `[lo, hi]` selects every bucket whose interval overlaps `[lo, hi]`. If all buckets would be selected, no `takeOff`/`landing` param is added (no filter). Multiple selected buckets are joined with a comma and URL-encoded (e.g. `takeOff=EARLY_MORNING%2CMORNING`).
+**Overlap logic:** A window `[lo, hi]` selects every bucket whose interval overlaps
+`[lo, hi]`. If all buckets would be selected, no `takeOff`/`landing` param is added
+(no filter). Multiple selected buckets are joined with a comma.
+
+**Example:** `departure_window=["06:00", "12:00"]` overlaps Early morning (06:00-08:00)
+and Morning (08:00-12:00), producing `takeOff=EARLY_MORNING,MORNING`.
 
 ---
 
 ## 5. Config and code
 
 - **config.yaml**
-  - `base_url`, `search_form_url`: page to open first (default `https://www.ixigo.com`).
-  - `steps.fill_and_search`: `instruction_file: instructions/fill_search_form.md`, `max_steps: 30`.
-  - `steps.extraction`: `instruction_file: instructions/wait_and_extract.md` and `schema`.
-- **instructions/fill_search_form.md**
-  - Select source `{{from_city}}` ({{from_code}}), destination `{{to_city}}` ({{to_code}}), one-way, date `{{date}}`, then click Search.
+  - `base_url`: `https://www.ixigo.com`
+  - `time_buckets`: list of bucket definitions with `label`, `start`, `end`, `ixigo_value`
+  - `city_codes`: 26 cities mapped to IATA codes
+  - `class_codes`: economy, business, premium_economy, first
+  - `steps.wait`: dedicated wait instruction (do NOT click REFRESH)
+  - `steps.extraction`: `instruction_file: instructions/wait_and_extract.md` and schema
 - **instructions/wait_and_extract.md**
-  - After results load: wait (dismiss login/banner), then extract flights matching `{{criteria}}`. Placeholders: `{{criteria}}`, `{{base_url}}`.
+  - Dismiss popups, scroll to trigger lazy-loading, extract up to 5 cheapest flights.
+  - Explicit guard: "Do NOT click REFRESH or SEARCH."
 - **agent.py**
-  - `_get_instruction(step_cfg)`: reads instruction from `instruction_file`.
-  - `search()`: opens Nova Act at `search_form_url` → act: fill form + search → act: wait + extract.
+  - `_build_search_url()`: builds URL with filter params (`stops`, `takeOff`, `landing`)
+  - `_resolve_time_buckets()`: maps `[HH:MM, HH:MM]` windows to Ixigo bucket values
+  - `search()`: SPA boot sequence + all bot-detection layers + extraction
 
 ---
 
-## 6. References
+## 6. Bot detection countermeasures
 
-- Ixigo agent: [backend/agents/ixigo/agent.py](../../agent.py)
-- Ixigo config: [backend/agents/ixigo/config.yaml](../../config.yaml)
-- Orchestrator: `backend/agents/orchestrator.py` — `run_travel` builds route and filters from planner output.
+The agent applies five layers of anti-detection (same as MakeMyTrip agent):
+
+| Layer | Technique | Implementation |
+|-------|-----------|----------------|
+| 1 | SPA boot sequence | Start at homepage, `goto(search_url)` after JS loads |
+| 2 | HTTP header masking | `set_extra_http_headers()` — real Chrome/122 UA + sec-ch-ua |
+| 3 | JS fingerprint overrides | `add_init_script()` — 10+ navigator/window properties |
+| 4 | Sensor warm-up | `networkidle` + `sleep(3)` dwell on homepage |
+| 5 | Behavioral signals | `mouse.move()` with natural pauses before navigation |
+
+Additional guards:
+- **Page drift guard**: checks URL after wait step, restores if drifted
+- **No REFRESH rule**: extraction instruction explicitly forbids clicking REFRESH
+
+See [`CHANGELOG_2026-03-11.md`](CHANGELOG_2026-03-11.md) for the full details of each layer.
+
+---
+
+## 7. References
+
+- Ixigo agent: [`backend/agents/ixigo/agent.py`](../../agent.py)
+- Ixigo config: [`backend/agents/ixigo/config.yaml`](../../config.yaml)
+- Bot detection guide: [`backend/docs/BOT_DETECTION_GUIDE.md`](../../../docs/BOT_DETECTION_GUIDE.md)
+- Orchestrator: `backend/agents/orchestrator.py`
