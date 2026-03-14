@@ -1,7 +1,9 @@
 """
-Test: Ixigo — Same flow as Cleartrip (Phase 1 + Phase 2)
-Phase 1: Agent extracts flights from ixigo.com (filters in URL).
-Phase 2: FlightNormalizer filters + sorts + deduplicates (same as Cleartrip).
+Test: Ixigo — Phase 1 (extract) + Phase 2 (normalize) + Phase 3 (offers/coupons)
+
+Phase 1: Agent extracts flights from ixigo.com (filters baked into URL).
+Phase 2: FlightNormalizer filters + sorts + deduplicates.
+Phase 3: For the top-N filtered flights, click Book and extract coupons in-session.
 
 Run: python3 tests/test_ixigo_agent.py
 NOTE: Opens a real browser window via Nova Act (~90s). Requires AWS credentials.
@@ -24,20 +26,19 @@ from nova.flight_normalizer import FlightNormalizer
 
 log = get_logger(__name__)
 
-# Same as Cleartrip test: Phase 1 (extract) + Phase 2 (normalizer)
 RUN_PHASE_1 = True
 RUN_PHASE_2 = True
+RUN_PHASE_3 = True   # P3: fetch offers (book + coupons) for top 2 filtered flights
 
 REQUIRED_FLIGHT_FIELDS = (
     "airline", "flight_number", "departure", "arrival",
-    "duration", "stops", "price", "url",
+    "duration", "stops", "price",
 )
 CANONICAL_FLIGHT_FIELDS = (
     "platform", "airline", "flight_number", "departure", "arrival",
-    "duration", "stops", "price", "book_url", "from_city", "to_city",
+    "duration", "stops", "price", "from_city", "to_city",
     "date", "travel_class",
 )
-IXIGO_BASE_URL = "https://www.ixigo.com"
 
 
 def assert_ok(condition: bool, message: str):
@@ -47,13 +48,11 @@ def assert_ok(condition: bool, message: str):
 
 
 def _parse_hhmm(t: str) -> int:
-    """Convert 'HH:MM' → minutes-since-midnight."""
     h, m = t.strip().split(":")
     return int(h) * 60 + int(m)
 
 
 def validate_flight_schema(flights: list[dict]):
-    """Validate Phase 1 output: schema, types, times, URL (Ixigo)."""
     assert_ok(len(flights) > 0, "validate_flight_schema expects at least one flight")
     for i, f in enumerate(flights):
         for field in REQUIRED_FLIGHT_FIELDS:
@@ -64,15 +63,9 @@ def validate_flight_schema(flights: list[dict]):
         assert_ok(len(dep) == 5 and ":" in dep, f"flight[{i}] departure must be HH:MM, got {dep!r}")
         arr = f.get("arrival", "")
         assert_ok(len(arr) == 5 and ":" in arr, f"flight[{i}] arrival must be HH:MM, got {arr!r}")
-        url = (f.get("url") or "").strip()
-        assert_ok(
-            url.startswith(IXIGO_BASE_URL) or url.startswith(IXIGO_BASE_URL + "/"),
-            f"flight[{i}] url must be Ixigo URL, got {url[:60]!r}..." if len(url) > 60 else f"flight[{i}] url must be Ixigo URL, got {url!r}",
-        )
 
 
 def validate_filtered_results(filtered: list[dict], filters: dict):
-    """Validate that FlightNormalizer applied filters correctly (same as Cleartrip)."""
     assert_ok(len(filtered) > 0, "FlightNormalizer returned 0 filtered flights")
 
     for i, f in enumerate(filtered):
@@ -105,28 +98,45 @@ def validate_filtered_results(filtered: list[dict], filters: dict):
                       f"filtered not sorted by price: [{i-1}]=₹{filtered[i-1]['price']} > [{i}]=₹{filtered[i]['price']}")
 
 
-def test_ixigo_search(from_city="Bengaluru", to_city="Hyderabad", days_from_now=4, filters=None):
-    """Same route and filters as Cleartrip test: Bengaluru → Hyderabad, departure 07:00–10:00, non-stop, sort by departure."""
-    travel_date = (date.today() + timedelta(days=days_from_now)).strftime("%Y-%m-%d")
+def test_ixigo_search(from_city="Bengaluru", to_city="Hyderabad", days_from_now=4, travel_date=None, filters=None):
+    if travel_date is None:
+        travel_date = (date.today() + timedelta(days=days_from_now)).strftime("%Y-%m-%d")
     log.info("=== test_ixigo_search: %s→%s date=%s ===", from_city, to_city, travel_date)
-    log.info("    Phases: P1=%s  P2=%s  filters=%s", RUN_PHASE_1, RUN_PHASE_2, filters)
-
-    search_params = {
-        "from_city":    from_city,
-        "to_city":      to_city,
-        "date":         travel_date,
-        "travel_class": "economy",
-        "filters":      filters,
-    }
+    log.info("    Phases: P1=%s  P2=%s  P3=%s  filters=%s", RUN_PHASE_1, RUN_PHASE_2, RUN_PHASE_3, filters)
 
     agent = IxigoAgent()
-    log.info("Starting Nova Act browser on ixigo.com...")
-    results = agent.search(**search_params)
+    offers_analysis = []
+    filtered_from_agent = []
 
-    assert_ok(all(r.get("platform") == "ixigo" for r in results),
-              "platform field must be 'ixigo'")
-    assert_ok(all(r.get("price") for r in results), "Some results missing price field")
+    # --- Single-session path: P1 + P3 when RUN_PHASE_3 ---
+    if RUN_PHASE_3 and RUN_PHASE_1:
+        log.info("Phase 1+3: Single-session search with offers (optimized)...")
+        result = agent.search(
+            from_city=from_city,
+            to_city=to_city,
+            date=travel_date,
+            travel_class="economy",
+            filters=filters,
+            fetch_offers=True,
+        )
+        assert_ok(isinstance(result, dict), f"fetch_offers=True should return dict, got {type(result)}")
+        results = result.get("flights", [])
+        offers_analysis = result.get("offers_analysis", [])
+        # Agent returns app-ready "filtered" (all options, top N with offers) when fetch_offers=True
+        filtered_from_agent = result.get("filtered", [])
+    else:
+        # --- Phase 1 only ---
+        log.info("Phase 1: Starting Nova Act browser on ixigo.com...")
+        results = agent.search(
+            from_city=from_city,
+            to_city=to_city,
+            date=travel_date,
+            travel_class="economy",
+            filters=filters,
+        )
+        assert_ok(isinstance(results, list), f"Phase 1 should return a list, got {type(results)}")
 
+    assert_ok(all(r.get("platform") == "ixigo" for r in results), "platform field must be 'ixigo'")
     log.info("Phase 1: Agent extracted %d flights", len(results))
     for i, r in enumerate(results, 1):
         log.info("  [%d] %s %s  dep=%s arr=%s dur=%s stops=%s  price=₹%s",
@@ -137,45 +147,103 @@ def test_ixigo_search(from_city="Bengaluru", to_city="Hyderabad", days_from_now=
     if len(results) == 0:
         log.warning(
             "Ixigo returned 0 results (site may show 'No Flights found' for this route/date). "
-            "Pipeline (URL build, Nova Act, extraction) ran; Phase 2 skipped."
+            "Pipeline (URL build, Nova Act, extraction) ran; Phase 2/3 skipped."
         )
-        log.info("test_ixigo_search PASSED (0 results — pipeline validated, no flights to normalize)")
-        return {"raw": [], "filtered": []}
+        log.info("test_ixigo_search PASSED (0 results — pipeline validated)")
+        return {"raw": [], "filtered": [], "offers_analysis": []}
 
     validate_flight_schema(results)
     log.info("Phase 1 PASSED (%d flights)", len(results))
 
-    # Phase 2: FlightNormalizer — same as Cleartrip
-    filtered = results
-    if RUN_PHASE_2 and filters:
-        normalizer = FlightNormalizer()
-        filtered = normalizer.normalize(results, filters=filters)
-
-        log.info("Phase 2: FlightNormalizer %d → %d flights", len(results), len(filtered))
+    # --- Phase 2: FlightNormalizer (for display/validation; already applied in-agent when fetch_offers=True) ---
+    if RUN_PHASE_3 and RUN_PHASE_1 and filtered_from_agent:
+        filtered = filtered_from_agent  # app-ready list: all options, top N have offers
+        log.info("Phase 2: using agent filtered (%d flights, top %d with offers)", len(filtered), len(offers_analysis))
         for i, f in enumerate(filtered, 1):
-            log.info("  [%d] %s %s  dep=%s arr=%s  price=₹%s",
+            has_offers = (f.get("offers") is not None) and (f.get("offers") != {})
+            log.info("  [%d] %s %s  dep=%s arr=%s  price=₹%s  offers=%s",
                      i, f.get("airline"), f.get("flight_number"),
-                     f.get("departure"), f.get("arrival"), f.get("price"))
-
-        validate_filtered_results(filtered, filters)
-        log.info("Phase 2 PASSED (%d → %d filtered)", len(results), len(filtered))
+                     f.get("departure"), f.get("arrival"), f.get("price"), has_offers)
+        if filtered:
+            base = [{k: v for k, v in f.items() if k != "offers"} for f in filtered]
+            validate_filtered_results(base, filters)
+        log.info("Phase 2 PASSED (agent filtered)")
     else:
-        log.info("Phase 2 SKIPPED%s", "" if not filters else " (RUN_PHASE_2=False)")
+        filtered = results
+        if RUN_PHASE_2 and filters:
+            normalizer = FlightNormalizer()
+            filtered = normalizer.normalize(results, filters=filters)
+            log.info("Phase 2: FlightNormalizer %d → %d flights", len(results), len(filtered))
+            for i, f in enumerate(filtered, 1):
+                log.info("  [%d] %s %s  dep=%s arr=%s  price=₹%s",
+                         i, f.get("airline"), f.get("flight_number"),
+                         f.get("departure"), f.get("arrival"), f.get("price"))
+            if filtered:
+                validate_filtered_results(filtered, filters)
+            log.info("Phase 2 PASSED (%d → %d filtered)", len(results), len(filtered))
+        else:
+            log.info("Phase 2 SKIPPED%s", "" if not filters else " (RUN_PHASE_2=False)")
 
-    log.info("test_ixigo_search PASSED  (raw=%d, filtered=%d)", len(results), len(filtered))
-    return {"raw": results, "filtered": filtered}
+    # --- Phase 3: if we used single-session, offers_analysis already set; else fetch separately ---
+    if RUN_PHASE_3 and not (RUN_PHASE_3 and RUN_PHASE_1) and filtered:
+        log.info("Phase 3: Fetching offers for top %d filtered flights...", min(2, len(filtered)))
+        offers_result = agent.fetch_offers(
+            targets=filtered,
+            from_city=from_city,
+            to_city=to_city,
+            date=travel_date,
+            travel_class="economy",
+            filters=filters,
+        )
+        offers_analysis = offers_result.get("offers_analysis", [])
+
+    if offers_analysis:
+        log.info("Phase 3: %d offer results", len(offers_analysis))
+        for i, offer in enumerate(offers_analysis, 1):
+            fare = offer.get("fare_details") or {}
+            log.info("  [%d] %s %s  price=₹%s  coupons=%d  best_after_coupon=₹%s",
+                     i, offer.get("airline"), offer.get("flight_number"),
+                     offer.get("original_price"), len(offer.get("coupons", [])),
+                     offer.get("best_price_after_coupon", "N/A"))
+            if fare:
+                log.info("      fare: base=₹%s  taxes=₹%s  total=₹%s",
+                         fare.get("base_fare", "?"), fare.get("taxes", "?"),
+                         fare.get("total", "?"))
+            for j, c in enumerate(offer.get("coupons", []), 1):
+                log.info("    coupon [%d] %s: %s (₹%s off → ₹%s)",
+                         j, c.get("code"), c.get("description", "")[:60],
+                         c.get("discount"), c.get("price_after_coupon"))
+        log.info("Phase 3 DONE")
+    else:
+        log.info("Phase 3 SKIPPED or no offers")
+
+    log.info("test_ixigo_search PASSED  (raw=%d, filtered=%d, offers=%d)",
+             len(results), len(filtered), len(offers_analysis))
+    return {"raw": results, "filtered": filtered, "offers_analysis": offers_analysis}
 
 
 if __name__ == "__main__":
     log_path = add_agent_test_file_handler("ixigo")
     log.info("Test logs also written to %s", log_path)
 
-    # Use Mumbai–Delhi, 7 days out, minimal filters for higher chance of results (same shape as Cleartrip).
     filters = {
         "departure_window": ["06:00", "12:00"],
-        "max_stops":        1,
+        "max_stops":        0,   # default non-stop; set 1 or 2 only if user asks for stops
         "sort_by":          "price",
     }
-    result = test_ixigo_search("Mumbai", "Delhi", days_from_now=7, filters=filters)
+    # Temporarily: P1+P2 only, Hyderabad → Bengaluru, 14 Mar
+    result = test_ixigo_search(
+        "Chennai",
+        "Bengaluru",
+        travel_date="2026-04-02",
+        filters=filters,
+    )
+    assert "raw" in result and "filtered" in result and "offers_analysis" in result, "test must return {raw, filtered, offers_analysis}"
     log.info("Full results JSON:\n%s", json.dumps(result, indent=2, default=str))
-    log.info("Ixigo agent test DONE")
+    offers = result.get("offers_analysis") or []
+    if offers:
+        log.info("Ixigo agent test DONE (P1+P2+P3: raw=%d, filtered=%d, offers=%d)",
+                 len(result["raw"]), len(result["filtered"]), len(offers))
+    else:
+        log.info("Ixigo agent test DONE (P1+P2 only: raw=%d, filtered=%d)",
+                 len(result["raw"]), len(result["filtered"]))

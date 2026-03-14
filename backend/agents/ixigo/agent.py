@@ -1,163 +1,468 @@
 """
 Ixigo — Nova Act Agent
-Searches ixigo.com for flights and returns top results.
-Config: instructions and schemas in config.yaml.
+
+Phase 1: Extract flight listings from ixigo.com (bot-detection hardened).
+Phase 3: For specific target flights, click Book and extract coupons in-session.
+
+See docs/BOT_DETECTION_GUIDE.md for the multi-layer anti-detection approach.
 """
 
 import os
-import sys
-from pathlib import Path
-
 import yaml
-from nova_act import ActGetResult, NovaAct, Workflow
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from time import perf_counter, sleep
 
-_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
+from nova_act import ActGetResult, NovaAct, Workflow
 
 from logger import get_logger
 from nova_auth import get_or_create_workflow_definition
 from agents.act_handler import ActExceptionHandler
+from nova.flight_normalizer import FlightNormalizer
 
 log = get_logger(__name__)
 
 _AGENT_DIR = Path(__file__).resolve().parent
 _CONFIG_PATH = _AGENT_DIR / "config.yaml"
-with open(_CONFIG_PATH, encoding="utf-8") as _f:
-    _CONFIG = yaml.safe_load(_f)
+with open(_CONFIG_PATH, encoding="utf-8") as f:
+    _CONFIG = yaml.safe_load(f)
+
+_REAL_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
+
+_STEALTH_INIT_SCRIPT = f"""
+(function() {{
+    Object.defineProperty(navigator, 'webdriver', {{get: () => undefined}});
+    Object.defineProperty(navigator, 'userAgent', {{get: () => '{_REAL_UA}'}});
+
+    if (!window.chrome) {{
+        window.chrome = {{
+            runtime: {{ id: undefined, connect: function() {{}}, sendMessage: function() {{}} }},
+            app: {{}}, csi: function() {{}}, loadTimes: function() {{}}
+        }};
+    }}
+
+    Object.defineProperty(navigator, 'plugins', {{get: () => [
+        {{name: 'PDF Viewer',          filename: 'internal-pdf-viewer', description: 'Portable Document Format'}},
+        {{name: 'Chrome PDF Viewer',   filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''}},
+        {{name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: ''}},
+        {{name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: ''}},
+        {{name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: ''}}
+    ]}});
+
+    Object.defineProperty(navigator, 'languages', {{get: () => ['en-US', 'en']}});
+    Object.defineProperty(navigator, 'hardwareConcurrency', {{get: () => 8}});
+    Object.defineProperty(navigator, 'deviceMemory', {{get: () => 8}});
+
+    try {{
+        Object.defineProperty(window, 'outerWidth',  {{get: () => screen.width  || 1440}});
+        Object.defineProperty(window, 'outerHeight', {{get: () => (screen.height || 900)}});
+    }} catch(e) {{}}
+
+    try {{
+        Object.defineProperty(screen, 'colorDepth', {{get: () => 24}});
+        Object.defineProperty(screen, 'pixelDepth',  {{get: () => 24}});
+    }} catch(e) {{}}
+
+    try {{
+        const _origQuery = navigator.permissions.query.bind(navigator.permissions);
+        navigator.permissions.query = function(desc) {{
+            if (desc && desc.name === 'notifications') {{
+                return Promise.resolve({{ state: 'default', onchange: null }});
+            }}
+            return _origQuery(desc);
+        }};
+    }} catch(e) {{}}
+
+    try {{
+        const _toDataURL = HTMLCanvasElement.prototype.toDataURL;
+        HTMLCanvasElement.prototype.toDataURL = function() {{
+            if (this.width > 0 && this.height > 0) {{
+                const ctx = this.getContext('2d');
+                if (ctx) {{
+                    const p = ctx.getImageData(0, 0, 1, 1);
+                    p.data[0] ^= 1;
+                    ctx.putImageData(p, 0, 0);
+                    const res = _toDataURL.apply(this, arguments);
+                    p.data[0] ^= 1;
+                    ctx.putImageData(p, 0, 0);
+                    return res;
+                }}
+            }}
+            return _toDataURL.apply(this, arguments);
+        }};
+    }} catch(e) {{}}
+}})();
+"""
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _get_instruction(step_cfg: dict) -> str:
+    path = _AGENT_DIR / step_cfg["instruction_file"]
+    return path.read_text(encoding="utf-8").strip()
 
 
 def _sub(s: str, **kwargs: str) -> str:
     for k, v in kwargs.items():
-        s = s.replace(f"{{{{{k}}}}}", str(v))
+        s = s.replace(f"{{{{{k}}}}}", v)
     return s
 
 
-def _hhmm_to_minutes(t: str) -> int:
-    """Parse an HH:MM string and return total minutes since midnight."""
-    h, m = t.strip().split(":")
+def _elapsed_ms(start: float) -> int:
+    return int((perf_counter() - start) * 1000)
+
+
+def _hhmm_to_minutes(value: str) -> int:
+    h, m = str(value).strip().split(":")
     return int(h) * 60 + int(m)
 
 
-def _load_time_buckets() -> list[tuple[str, int, int, str]]:
-    """Read time_buckets from config.yaml → [(label, start_min, end_min, ixigo_value), ...]."""
-    raw = _CONFIG.get("time_buckets") or []
-    buckets = []
-    for b in raw:
-        buckets.append((
-            b["label"],
-            _hhmm_to_minutes(b["start"]),
-            _hhmm_to_minutes(b["end"]),
-            b.get("ixigo_value", b["label"].upper().replace(" ", "_")),
-        ))
-    return buckets
-
-
-def _window_to_ixigo_values(window: list[str] | None) -> list[str]:
-    """Map departure_window or arrival_window [\"HH:MM\", \"HH:MM\"] to Ixigo URL param values.
-    Returns overlapping bucket ixigo_values (e.g. [\"EARLY_MORNING\", \"MORNING\"]).
-    Returns [] if no window or all buckets would be selected (no filter).
-    """
+def _resolve_time_buckets(window: list | None, buckets: list[dict]) -> list[str]:
+    """Map a [HH:MM, HH:MM] window to overlapping Ixigo time bucket values."""
     if not window or len(window) != 2:
         return []
     try:
         lo = _hhmm_to_minutes(window[0])
         hi = _hhmm_to_minutes(window[1])
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         return []
-    buckets = _load_time_buckets()
-    if not buckets:
+    selected = []
+    for b in buckets:
+        b_start = b["start"]
+        b_end = b["end"]
+        if max(lo, b_start) < min(hi, b_end):
+            selected.append(b["ixigo_value"])
+    if len(selected) == len(buckets):
         return []
-    values = [
-        ixigo_value
-        for _label, bstart, bend, ixigo_value in buckets
-        if lo < bend and bstart <= hi
-    ]
-    if len(values) == len(buckets):
-        return []
-    return values
+    return selected
 
 
-def _get_instruction(step_cfg: dict) -> str:
-    """Read instruction from file (like Cleartrip). Supports instruction_file with {{criteria}}, {{base_url}} placeholders."""
-    instruction_file = step_cfg.get("instruction_file")
-    if instruction_file:
-        path = _AGENT_DIR / instruction_file
-        return path.read_text(encoding="utf-8").strip()
-    return (step_cfg.get("instruction") or "").strip()
+def _normalize_coupons(coupon_list: list[dict]) -> list[dict]:
+    for c in coupon_list:
+        if "description" in c and isinstance(c["description"], str):
+            c["description"] = c["description"].replace("\u20b5", "\u20b9")
+    return coupon_list
 
 
-def _build_search_url(
-    base_url: str,
-    from_code: str,
-    to_code: str,
-    date_ixigo: str,
-    travel_class: str = "economy",
-    filters: dict | None = None,
-) -> str:
-    """Build Ixigo results URL like a user who only selected source, destination and date.
-    No stops, takeOff, or landing — minimal URL so the page loads the same way as a fresh search.
+def _backfill_booking_urls(flights: list[dict], offers_analysis: list[dict]) -> None:
+    """Set booking_url and book_url on each flight that has a matching offer (by airline + flight_number)."""
+    key_to_url: dict[tuple[str, str], str] = {}
+    for o in offers_analysis:
+        url = o.get("booking_url")
+        if url:
+            key_to_url[(str(o.get("airline", "")).strip(), str(o.get("flight_number", "")).strip())] = url
+    for f in flights:
+        k = (str(f.get("airline", "")).strip(), str(f.get("flight_number", "")).strip())
+        if k in key_to_url:
+            url = key_to_url[k]
+            f["booking_url"] = url
+            f["book_url"] = url  # normalizer reads book_url
+
+
+def _build_filtered_with_offers(
+    raw_flights: list[dict],
+    offers_analysis: list[dict],
+    filters: dict | None,
+) -> list[dict]:
     """
-    class_codes = _CONFIG.get("class_codes") or {}
-    class_code = class_codes.get(travel_class.lower().strip(), "e")
-    return (
-        f"{base_url}/search/result/flight"
-        f"?from={from_code}&to={to_code}&date={date_ixigo}"
-        f"&adults=1&children=0&infants=0&class={class_code}&source=Search+Form"
-    )
+    Build app-ready list: all filtered flights, with optional offer data for the first N.
 
+    Each item has canonical flight fields (platform, airline, flight_number, departure,
+    arrival, duration, stops, price, book_url, from_city, to_city, date, travel_class).
+    For the first len(offers_analysis) items we add an "offers" object with
+    booking_url, fare_details, coupons, best_price_after_coupon; for the rest offers is null.
+    """
+    normalizer = FlightNormalizer()
+    filtered = normalizer.normalize(raw_flights, filters=filters or {})
+    n = len(offers_analysis)
+    out: list[dict] = []
+    for i, flight in enumerate(filtered):
+        item = dict(flight)
+        if i < n:
+            o = offers_analysis[i]
+            item["offers"] = {
+                "booking_url": o.get("booking_url"),
+                "fare_details": o.get("fare_details") or {},
+                "coupons": o.get("coupons") or [],
+                "best_price_after_coupon": o.get("best_price_after_coupon"),
+            }
+        else:
+            item["offers"] = None
+        out.append(item)
+    return out
+
+
+def _apply_stealth(nova) -> None:
+    """Apply all bot-detection countermeasures to a Nova session."""
+    nova.page.wait_for_load_state("load")
+
+    try:
+        nova.page.wait_for_load_state("networkidle", timeout=6000)
+    except Exception:
+        pass
+    sleep(2)
+
+    nova.page.context.set_extra_http_headers({
+        "User-Agent": _REAL_UA,
+        "sec-ch-ua": '"Google Chrome";v="122", "Not(A:Brand";v="24", "Chromium";v="122"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
+    })
+
+    nova.page.add_init_script(_STEALTH_INIT_SCRIPT)
+
+    try:
+        nova.page.mouse.move(200, 300)
+        sleep(0.4)
+        nova.page.mouse.move(420, 360)
+        sleep(0.6)
+    except Exception:
+        pass
+
+
+def _wait_for_results(nova, url: str) -> None:
+    """Navigate to search URL and wait for results. Dynamic wait for flight-list when configured, else static sleep (racing logic)."""
+    nova.page.goto(url)
+    nova.page.wait_for_load_state("domcontentloaded")
+
+    selector = _CONFIG.get("wait_for_selector")
+    timeout_ms = _CONFIG.get("wait_for_selector_timeout_ms", 15000)
+    if selector and isinstance(selector, str) and selector.strip():
+        try:
+            log.info("Ixigo: waiting for results container %s (max %d ms)", selector, timeout_ms)
+            nova.page.wait_for_selector(selector.strip(), state="visible", timeout=timeout_ms)
+            sleep(1)  # brief pause for hydration after container is visible (avoids skeleton loaders)
+        except Exception as e:
+            log.warning("Ixigo: wait_for_selector %r failed (%s), falling back to static sleep", selector, e)
+            sleep(4)
+    else:
+        sleep(4)
+
+    if "search/result/flight" not in nova.page.url:
+        log.warning("Ixigo: page drifted (now: %s); restoring", nova.page.url)
+        nova.page.goto(url)
+        nova.page.wait_for_load_state("domcontentloaded")
+        if selector and isinstance(selector, str) and selector.strip():
+            try:
+                nova.page.wait_for_selector(selector.strip(), state="visible", timeout=timeout_ms)
+            except Exception:
+                pass
+        sleep(2)
+
+
+# ---------------------------------------------------------------------------
+# Agent
+# ---------------------------------------------------------------------------
 
 class IxigoAgent:
+    def _process_one_target(self, nova, flight: dict, url: str, idx: int, total: int) -> dict:
+        """Process a single target in an existing session: book (or goto url) + extract coupons. Returns one offer dict."""
+        book_cfg = _CONFIG["steps"].get("book_then_continue")
+        coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
+        conv_fee = _CONFIG.get("convenience_fee", 0)
+        airline = flight.get("airline", "")
+        flight_number = flight.get("flight_number", "")
+        price = int(flight.get("price", 0) or 0)
+
+        offer: dict = {
+            "flight_number": flight_number,
+            "airline": airline,
+            "original_price": price,
+            "fare_details": {},
+            "coupons": [],
+            "best_price_after_coupon": None,
+            "booking_url": None,
+        }
+        flight_start = perf_counter()
+
+        try:
+            direct_url = (flight.get("book_url") or flight.get("booking_url") or "").strip()
+            if direct_url and direct_url.startswith("http"):
+                nova.page.goto(direct_url)
+                nova.page.wait_for_load_state("domcontentloaded")
+                sleep(2)
+                offer["booking_url"] = nova.page.url
+                log.info("Offers [%d/%d]: used Phase 1 book_url → %s", idx + 1, total, nova.page.url[:80])
+            else:
+                _wait_for_results(nova, url)
+                instruction = _sub(
+                    _get_instruction(book_cfg),
+                    airline=airline,
+                    flight_number=flight_number,
+                    price=str(price),
+                )
+                nova.act(instruction, max_steps=book_cfg.get("max_steps", 30))
+                offer["booking_url"] = nova.page.url
+                log.info("Offers [%d/%d]: on booking page → %s", idx + 1, total, nova.page.url[:80])
+
+            out = nova.act(
+                _get_instruction(coupons_cfg),
+                max_steps=coupons_cfg.get("max_steps", 25),
+                schema=coupons_cfg.get("schema"),
+            )
+            parsed = (
+                getattr(out, "parsed_response", None)
+                if isinstance(out, ActGetResult)
+                else (out if isinstance(out, dict) else None)
+            )
+
+            if isinstance(parsed, dict):
+                fare_details = parsed.get("fare_details") or {}
+                fare_details["convenience_fee"] = conv_fee
+                fare_total = int(fare_details.get("total", 0) or 0)
+                fare_details["final_price"] = fare_total + conv_fee
+                offer["fare_details"] = fare_details
+                if fare_details:
+                    log.info(
+                        "Offers [%d/%d]: fare base=₹%s taxes=₹%s total=₹%s +conv=₹%d → final=₹%s",
+                        idx + 1, total,
+                        fare_details.get("base_fare"), fare_details.get("taxes"),
+                        fare_total, conv_fee, fare_details["final_price"],
+                    )
+                coupon_list = _normalize_coupons(parsed.get("coupons") or [])
+            else:
+                coupon_list = _normalize_coupons(parsed if isinstance(parsed, list) else [])
+
+            final_price = int(offer.get("fare_details", {}).get("final_price", price) or price)
+            for c in coupon_list:
+                c["price_after_coupon"] = max(0, final_price - int(c.get("discount", 0) or 0))
+            offer["coupons"] = coupon_list
+            if coupon_list:
+                offer["best_price_after_coupon"] = min(c["price_after_coupon"] for c in coupon_list)
+            log.info("Offers [%d/%d]: %d coupons extracted", idx + 1, total, len(coupon_list))
+        except Exception as e:
+            log.warning("Offers [%d/%d]: failed for %s %s: %s", idx + 1, total, airline, flight_number, e)
+            offer["error"] = str(e)
+
+        offer["session_ms"] = _elapsed_ms(flight_start)
+        return offer
+
+    def _run_one_offer_in_new_session(self, target: dict, url: str, idx: int, total: int) -> dict:
+        """Open a new Nova session, load search page, process this one target. Returns one offer dict (for parallel P3)."""
+        workflow_name = _CONFIG["workflow_name"]
+        homepage = _CONFIG["base_url"] + "/"
+        get_or_create_workflow_definition(workflow_name)
+        headless = os.environ.get("FAREWISE_HEADED", "0") != "1"
+        with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf, \
+                NovaAct(workflow=wf, starting_page=homepage, headless=headless,
+                        tty=False, ignore_https_errors=True) as nova:
+            _apply_stealth(nova)
+            _wait_for_results(nova, url)
+            return self._process_one_target(nova, target, url, idx, total)
+
+    def _run_offer_loop_parallel(self, targets: list[dict], url: str) -> list[dict]:
+        """Run one Nova session per target in parallel. Returns offers_analysis in target order."""
+        book_cfg = _CONFIG["steps"].get("book_then_continue")
+        coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
+        if not book_cfg or not coupons_cfg:
+            return []
+        total = len(targets)
+        max_workers = min(_CONFIG.get("max_parallel_offers", 2), total)
+        log.info("Ixigo fetch_offers: parallel mode, %d sessions for %d targets", max_workers, total)
+        offers_analysis: list[dict] = [None] * total
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self._run_one_offer_in_new_session, t, url, idx, total): idx
+                for idx, t in enumerate(targets)
+            }
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    offers_analysis[idx] = future.result()
+                except Exception as e:
+                    log.warning("Parallel offer [%d/%d] failed: %s", idx + 1, total, e)
+                    t = targets[idx]
+                    offers_analysis[idx] = {
+                        "flight_number": t.get("flight_number", ""),
+                        "airline": t.get("airline", ""),
+                        "original_price": t.get("price", 0),
+                        "fare_details": {},
+                        "coupons": [],
+                        "best_price_after_coupon": None,
+                        "booking_url": None,
+                        "error": str(e),
+                        "session_ms": 0,
+                    }
+        return [o for o in offers_analysis if o is not None]
+
+    def _run_offer_loop(self, nova, targets: list[dict], url: str) -> list[dict]:
+        """Sequential: in the current session, for each target Book (or goto book_url) + extract coupons."""
+        book_cfg = _CONFIG["steps"].get("book_then_continue")
+        coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
+        if not book_cfg or not coupons_cfg:
+            return []
+        top_n = _CONFIG.get("offers_top_n", 2)
+        targets = targets[:top_n]
+        total = len(targets)
+        offers_analysis = []
+        for idx, flight in enumerate(targets):
+            airline = flight.get("airline", "")
+            flight_number = flight.get("flight_number", "")
+            price = int(flight.get("price", 0) or 0)
+            log.info("Offers [%d/%d]: %s %s ₹%d", idx + 1, total, airline, flight_number, price)
+            offer = self._process_one_target(nova, flight, url, idx, total)
+            offers_analysis.append(offer)
+        return offers_analysis
 
     def _get_code(self, city: str) -> str:
         codes = _CONFIG.get("city_codes") or {}
         return codes.get(city.lower().strip(), city.upper()[:3])
 
-    @staticmethod
-    def _format_date(date_str: str) -> str:
-        """Convert YYYY-MM-DD to DDMMYYYY (Ixigo URL, e.g. 06052026 for 2026-05-06). Never return empty."""
-        if not (date_str and date_str.strip()):
-            from datetime import date
-            today = date.today()
-            return f"{today.day:02d}{today.month:02d}{today.year}"
+    def _format_date(self, date_str: str) -> str:
+        """YYYY-MM-DD -> DDMMYYYY"""
         try:
-            parts = date_str.strip().split("-")
-            if len(parts) != 3:
-                raise ValueError("need YYYY-MM-DD")
-            y, m, d = parts[0], parts[1], parts[2]
-            d = d.zfill(2)
-            m = m.zfill(2)
-            out = f"{d}{m}{y}"
-            if len(out) != 8:
-                raise ValueError("expected 8 chars")
-            return out
+            parts = date_str.split("-")
+            return f"{parts[2]}{parts[1]}{parts[0]}"
         except Exception:
-            cleaned = date_str.replace("-", "").strip()
-            if len(cleaned) == 8 and cleaned.isdigit():
-                return cleaned
-            from datetime import date
-            today = date.today()
-            return f"{today.day:02d}{today.month:02d}{today.year}"
+            return date_str.replace("-", "")
 
-    def _get_class_code(self, travel_class: str) -> str:
-        codes = _CONFIG.get("class_codes") or {}
-        return codes.get(travel_class.lower().strip(), "e")
+    def _build_search_url(self, from_city, to_city, date, travel_class, filters=None):
+        from_code = self._get_code(from_city)
+        to_code = self._get_code(to_city)
+        date_ixigo = self._format_date(date)
+        class_code = _CONFIG.get("class_codes", {}).get(travel_class.lower(), "e")
 
-    @staticmethod
-    def _filters_to_criteria(filters: dict | None) -> str:
-        """Convert structured filters dict → readable criteria hint for Nova Act."""
+        url = (
+            f"{_CONFIG['base_url']}/search/result/flight"
+            f"?from={from_code}&to={to_code}&date={date_ixigo}"
+            f"&adults=1&children=0&infants=0&class={class_code}&intl=n"
+        )
+
+        # Sort: Ixigo sort_type = cheapest | quickest | earliest | best; default cheapest
+        sort_by = (filters or {}).get("sort_by", "price")
+        ixigo_sort = {"price": "cheapest", "duration": "quickest", "departure": "earliest"}.get(
+            sort_by, "cheapest"
+        )
+        url += f"&sort_type={ixigo_sort}"
+
         if not filters:
-            return "top 5 cheapest flights sorted by price ascending"
-        parts = []
-        dep_window = filters.get("departure_window")
-        if dep_window and len(dep_window) == 2:
-            parts.append(f"departure between {dep_window[0]} and {dep_window[1]}")
-        if filters.get("max_stops") == 0:
-            parts.append("non-stop flights only")
-        sort_by = filters.get("sort_by", "price")
-        parts.append(f"sort by {sort_by} ascending")
-        return "; ".join(parts)
+            return url
 
+        max_stops = filters.get("max_stops")
+        if max_stops is not None:
+            url += f"&stops={int(max_stops)}"
+
+        buckets = _CONFIG.get("time_buckets", [])
+        if buckets:
+            dep_vals = _resolve_time_buckets(filters.get("departure_window"), buckets)
+            if dep_vals:
+                url += "&takeOff=" + ",".join(dep_vals)
+
+            arr_vals = _resolve_time_buckets(filters.get("arrival_window"), buckets)
+            if arr_vals:
+                url += "&landing=" + ",".join(arr_vals)
+
+        return url
+
+    # -----------------------------------------------------------------
+    # Phase 1: Extract flights (optionally Phase 3 in same session)
+    # -----------------------------------------------------------------
     def search(
         self,
         from_city: str,
@@ -165,77 +470,161 @@ class IxigoAgent:
         date: str,
         travel_class: str = "economy",
         filters: dict | None = None,
-    ) -> list[dict]:
-        log.info("Searching Ixigo: %s→%s date=%s class=%s filters=%s", from_city, to_city, date, travel_class, filters)
+        fetch_offers: bool = False,
+    ) -> list[dict] | dict:
+        """Extract flight listings from Ixigo.
 
-        os.environ.pop("NOVA_ACT_API_KEY", None)
+        When fetch_offers=False (default): returns a list of flight dicts.
+        When fetch_offers=True: runs Phase 2 (normalize) and Phase 3 (book + coupons)
+        in the same browser session and returns
+        { "telemetry": {...}, "flights": [...], "offers_analysis": [...] }.
+        """
+        log.info(
+            "Searching Ixigo: %s→%s date=%s class=%s filters=%s fetch_offers=%s",
+            from_city, to_city, date, travel_class, filters, fetch_offers,
+        )
 
-        workflow_name = os.environ.get("NOVA_ACT_WORKFLOW_IXIGO") or _CONFIG["workflow_name"]
-        base_url = _CONFIG["base_url"]
-        starting_page = _CONFIG.get("search_form_url") or base_url
-        from_code = self._get_code(from_city)
-        to_code = self._get_code(to_city)
-
+        workflow_name = _CONFIG["workflow_name"]
+        url = self._build_search_url(from_city, to_city, date, travel_class, filters)
+        log.debug("Ixigo search URL: %s", url)
         get_or_create_workflow_definition(workflow_name)
-
         headless = os.environ.get("FAREWISE_HEADED", "0") != "1"
-        context = {"from": from_city, "to": to_city, "date": date}
+        max_steps = int(os.environ.get("NOVA_ACT_MAX_STEPS", _CONFIG.get("max_steps_default", 50)))
+
+        results: list[dict] = []
+        overall_start = perf_counter()
+        pending_parallel: tuple[list[dict], str] | None = None  # (targets, url) when P3 runs parallel after block
+
         try:
-            results: list[dict] = []
-            max_steps = int(os.environ.get("NOVA_ACT_MAX_STEPS", _CONFIG.get("max_steps_default", 50)))
-            criteria = self._filters_to_criteria(filters)
+            homepage = _CONFIG["base_url"] + "/"
+            with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf, \
+                    NovaAct(workflow=wf, starting_page=homepage, headless=headless,
+                            tty=False, ignore_https_errors=True) as nova:
 
-            with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf:
-                with NovaAct(workflow=wf, starting_page=starting_page, headless=headless, tty=False) as nova:
-                    log.debug("Nova Act browser started for ixigo.com (workflow=%s), starting at %s", workflow_name, starting_page)
+                _apply_stealth(nova)
+                _wait_for_results(nova, url)
+                # Skeleton prevention: brief dwell so results list can hydrate before extraction scroll
+                sleep(3)
+                log.debug("Ixigo: post-wait dwell (3s) for results hydration")
 
-                    # Step 1: Open base URL and fill form — select source, destination, one-way, date, then search
-                    fill_cfg = _CONFIG["steps"].get("fill_and_search")
-                    if fill_cfg:
-                        fill_instruction = _get_instruction(fill_cfg)
-                        fill_instruction = _sub(
-                            fill_instruction,
-                            from_city=from_city,
-                            to_city=to_city,
-                            from_code=from_code,
-                            to_code=to_code,
-                            date=date,
-                        )
-                        fill_max = fill_cfg.get("max_steps", 30)
-                        log.info("Ixigo: filling search form (from=%s, to=%s, one-way, date=%s)", from_city, to_city, date)
-                        nova.act(fill_instruction, max_steps=fill_max)
+                extraction_cfg = _CONFIG["steps"]["extraction"]
+                extracted = nova.act(
+                    _get_instruction(extraction_cfg),
+                    max_steps=max_steps,
+                    schema=extraction_cfg["schema"],
+                )
 
-                    # Step 2: Wait for results and extract flights
-                    extraction_cfg = _CONFIG["steps"]["extraction"]
-                    instruction = _get_instruction(extraction_cfg)
-                    instruction = _sub(instruction, criteria=criteria, base_url=base_url)
-                    extracted = nova.act(
-                        instruction,
-                        max_steps=max_steps,
-                        schema=extraction_cfg["schema"],
-                    )
+                items = None
+                if isinstance(extracted, ActGetResult) and isinstance(
+                    getattr(extracted, "parsed_response", None), list
+                ):
+                    items = extracted.parsed_response
+                elif isinstance(extracted, list):
+                    items = extracted
 
-                    items = None
-                    if isinstance(extracted, ActGetResult) and isinstance(getattr(extracted, "parsed_response", None), list):
-                        items = extracted.parsed_response
-                    elif isinstance(extracted, list):
-                        items = extracted
-                    if items is not None:
-                        for item in items[:5]:
-                            url_val = (item.get("url") or "").strip()
-                            if url_val and not url_val.startswith("http"):
-                                url_val = base_url + (url_val if url_val.startswith("/") else "/" + url_val)
-                            results.append({
-                                "platform": "ixigo",
-                                "from_city": from_city,
-                                "to_city": to_city,
-                                "date": date,
-                                "class": travel_class,
-                                **{**item, "url": url_val or item.get("url", "")},
-                            })
-                        log.info("Ixigo returned %d flights for %s→%s on %s", len(results), from_city, to_city, date)
+                if items is not None:
+                    results = [
+                        {
+                            "platform": "ixigo",
+                            "from_city": from_city,
+                            "to_city": to_city,
+                            "date": date,
+                            "class": travel_class,
+                            **item,
+                        }
+                        for item in items
+                    ]
+                    log.info("Ixigo Phase 1: %d flights extracted for %s→%s", len(results), from_city, to_city)
+                else:
+                    log.warning("Ixigo extraction returned unexpected type: %s", type(extracted))
+
+                if fetch_offers and results:
+                    normalizer = FlightNormalizer()
+                    filtered = normalizer.normalize(results, filters=filters or {})
+                    top_n = _CONFIG.get("offers_top_n", 2)
+                    targets = filtered[:top_n]
+                    use_parallel = _CONFIG.get("offers_parallel") and len(targets) > 1
+                    if use_parallel:
+                        log.info("Ixigo fetch_offers: parallel (after P1), %d targets", len(targets))
+                        pending_parallel = (targets, url)
                     else:
-                        log.warning("Ixigo extraction returned unexpected type: %s", type(extracted))
+                        log.info("Ixigo fetch_offers (same session): %d targets", len(targets))
+                        offers_analysis = self._run_offer_loop(nova, targets, url)
+                        _backfill_booking_urls(results, offers_analysis)
+                        telemetry = {"search_url": url, "timings_ms": {"total_ms": _elapsed_ms(overall_start)}}
+                        filtered = _build_filtered_with_offers(results, offers_analysis, filters)
+                        return {
+                            "telemetry": telemetry,
+                            "flights": results,
+                            "filtered": filtered,
+                            "offers_analysis": offers_analysis,
+                        }
+                if fetch_offers and not results:
+                    telemetry = {"search_url": url, "timings_ms": {"total_ms": _elapsed_ms(overall_start)}}
+                    return {"telemetry": telemetry, "flights": [], "filtered": [], "offers_analysis": []}
+
+            # After closing the extraction session: run P3 in parallel if requested
+            if pending_parallel is not None:
+                targets, offer_url = pending_parallel
+                offers_analysis = self._run_offer_loop_parallel(targets, offer_url)
+                _backfill_booking_urls(results, offers_analysis)
+                telemetry = {"search_url": url, "timings_ms": {"total_ms": _elapsed_ms(overall_start)}}
+                filtered = _build_filtered_with_offers(results, offers_analysis, filters)
+                return {
+                    "telemetry": telemetry,
+                    "flights": results,
+                    "filtered": filtered,
+                    "offers_analysis": offers_analysis,
+                }
+
             return results
         except Exception as e:
-            return ActExceptionHandler.handle(e, "Ixigo", context)
+            return ActExceptionHandler.handle(e, "Ixigo", {"from": from_city, "to": to_city})
+
+    # -----------------------------------------------------------------
+    # Phase 3: Book + extract coupons for specific targets
+    # -----------------------------------------------------------------
+    def fetch_offers(
+        self,
+        targets: list[dict],
+        from_city: str,
+        to_city: str,
+        date: str,
+        travel_class: str = "economy",
+        filters: dict | None = None,
+    ) -> dict:
+        """For each target flight, click Book and extract coupons in one session.
+
+        `targets` should be the Phase-2-normalized top flights (already filtered/sorted).
+        Use search(..., fetch_offers=True) for a single-session flow (extract + offers).
+        """
+        workflow_name = _CONFIG["workflow_name"]
+        url = self._build_search_url(from_city, to_city, date, travel_class, filters)
+        get_or_create_workflow_definition(workflow_name)
+        headless = os.environ.get("FAREWISE_HEADED", "0") != "1"
+
+        top_n = _CONFIG.get("offers_top_n", 2)
+        targets = targets[:top_n]
+        log.info("Ixigo fetch_offers: %d targets on %s→%s", len(targets), from_city, to_city)
+
+        telemetry: dict = {"search_url": url, "timings_ms": {}}
+        overall_start = perf_counter()
+        use_parallel = _CONFIG.get("offers_parallel") and len(targets) > 1
+
+        try:
+            if use_parallel:
+                offers_analysis = self._run_offer_loop_parallel(targets, url)
+            else:
+                homepage = _CONFIG["base_url"] + "/"
+                with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf, \
+                        NovaAct(workflow=wf, starting_page=homepage, headless=headless,
+                                tty=False, ignore_https_errors=True) as nova:
+                    _apply_stealth(nova)
+                    _wait_for_results(nova, url)
+                    offers_analysis = self._run_offer_loop(nova, targets, url)
+        except Exception as e:
+            log.error("Ixigo fetch_offers failed: %s", e)
+            offers_analysis = []
+
+        telemetry["timings_ms"]["total_ms"] = _elapsed_ms(overall_start)
+        return {"telemetry": telemetry, "offers_analysis": offers_analysis}

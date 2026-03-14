@@ -1,12 +1,73 @@
 workflow_name: "farewise-ixigo"
 base_url: "https://www.ixigo.com"
+max_steps_default: 50
+
 class_codes:
   economy: e
   business: b
+  premium_economy: p
+  first: f
+
 city_codes:
   mumbai: BOM
   delhi: DEL
   bangalore: BLR
+  bengaluru: BLR
+  hyderabad: HYD
+  chennai: MAA
+  kolkata: CCU
+  pune: PNQ
+  ahmedabad: AMD
+  goa: GOI
+  jaipur: JAI
+  kochi: COK
+  cochin: COK
+  lucknow: LKO
+  chandigarh: IXC
+  indore: IDR
+  bhubaneswar: BBI
+  nagpur: NAG
+  coimbatore: CJB
+  visakhapatnam: VTZ
+  vizag: VTZ
+  patna: PAT
+  srinagar: SXR
+  amritsar: ATQ
+  varanasi: VNS
+  leh: IXL
+  aurangabad: IXU
+
+time_buckets:
+  - label: "Early morning"
+    start: 0
+    end: 480
+    ixigo_value: "EARLY_MORNING"
+  - label: "Morning"
+    start: 480
+    end: 720
+    ixigo_value: "MORNING"
+  - label: "Afternoon"
+    start: 720
+    end: 960
+    ixigo_value: "AFTERNOON"
+  - label: "Evening"
+    start: 960
+    end: 1200
+    ixigo_value: "EVENING"
+  - label: "Night"
+    start: 1200
+    end: 1440
+    ixigo_value: "NIGHT"
+
+# Wait for results: [data-testid='pricing'] = Ixigo results container; null = static 4s only. 1s fast-fail so AI can start popup dismiss sooner; use 2000+ for slow networks.
+wait_for_selector: "[data-testid='pricing']"
+wait_for_selector_timeout_ms: 1000
+
+offers_top_n: 2
+offers_parallel: true
+max_parallel_offers: 2
+convenience_fee: 449
+
 steps:
   extraction:
     instruction_file: "instructions/wait_and_extract.md"
@@ -14,10 +75,47 @@ steps:
       type: array
       items:
         type: object
+        required:
+          - airline
+          - flight_number
+          - departure
+          - arrival
+          - duration
+          - stops
+          - price
+        additionalProperties: false
         properties:
-          airline: { type: string }
+          airline:       { type: string }
           flight_number: { type: string }
-          departure: { type: string }
-          arrival: { type: string }
-          price: { type: integer }
-          url: { type: string }
+          departure:     { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+          arrival:       { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+          duration:      { type: string }
+          stops:         { type: integer, minimum: 0 }
+          price:         { type: integer, minimum: 0 }
+          book_url:      { type: string }
+  book_then_continue:
+    instruction_file: "instructions/book_then_continue.md"
+    max_steps: 30
+  extract_coupons_from_booking_page:
+    instruction_file: "instructions/extract_coupons_from_booking_page.md"
+    max_steps: 25
+    schema:
+      type: object
+      required: [fare_details, coupons]
+      properties:
+        fare_details:
+          type: object
+          required: [base_fare, taxes, total]
+          properties:
+            base_fare: { type: integer, minimum: 0 }
+            taxes:     { type: integer, minimum: 0 }
+            total:     { type: integer, minimum: 0 }
+        coupons:
+          type: array
+          items:
+            type: object
+            required: [code, description, discount]
+            properties:
+              code:        { type: string }
+              description: { type: string }
+              discount:    { type: integer, minimum: 0 }
