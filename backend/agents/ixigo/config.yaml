@@ -63,7 +63,7 @@ time_buckets:
 wait_for_selector: "[data-testid='pricing']"
 wait_for_selector_timeout_ms: 1000
 
-offers_top_n: 2
+offers_top_n: 5
 offers_parallel: true
 max_parallel_offers: 2
 convenience_fee: 449
@@ -93,6 +93,13 @@ steps:
           stops:         { type: integer, minimum: 0 }
           price:         { type: integer, minimum: 0 }
           book_url:      { type: string }
+          fare_details:
+            type: object
+            required: [base_fare, taxes]
+            properties:
+              base_fare: { type: integer, minimum: 0 }
+              taxes:     { type: integer, minimum: 0 }
+              total:     { type: integer, minimum: 0 }
   book_then_continue:
     instruction_file: "instructions/book_then_continue.md"
     max_steps: 30

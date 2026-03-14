@@ -2,7 +2,8 @@ workflow_name: "farewise-cleartrip"
 base_url: "https://www.cleartrip.com"
 max_steps_default: 50
 # Number of top (cheapest) filtered flights to harvest URLs for and run parallel coupons-only extraction.
-offers_top_n: 2
+# Increased to 5 to ensure secondary flights (without coupons) also get fare breakdown from booking page.
+offers_top_n: 5
 
 # When true: first flight is extracted in main session (same URL not opened again); other flights open in parallel Nova sessions (one URL per session, no duplicate opens).
 # When false: single session only — Book → coupons → (first: skip add-ons + fill traveler → payment fare; others: booking fare) in same tab. One Chrome; slower than parallel.
