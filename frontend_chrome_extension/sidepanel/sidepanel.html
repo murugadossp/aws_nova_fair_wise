@@ -6,1753 +6,1433 @@
   <title>FareWise</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     /* ── RESET ─────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; overflow: hidden; }
+    
+    /* ── THEMES ─────────────────────────────────────────────── */
+    :root {
+      /* Dark Theme (Default) */
+      --bg:          #0b0e14;
+      --surface:     #131822;
+      --elevated:    #1f2735;
+      --overlay:     #283245;
+      --blue:        #6366f1;
+      --blue-glow:   rgba(99,102,241,0.15);
+      --blue-border: rgba(99,102,241,0.3);
+      --gold:        #f59e0b;
+      --gold-glow:   rgba(245,158,11,0.15);
+      --gold-border: rgba(245,158,11,0.4);
+      --green:       #10b981;
+      --green-glow:  rgba(16,185,129,0.15);
+      --green-border:rgba(16,185,129,0.3);
+      --yellow:      #fbbf24;
+      --red:         #ef4444;
+      --t1:          #f8fafc;
+      --t2:          #cbd5e1;
+      --t3:          #64748b;
+      --ixigo:       #293b77;
+      --cleartrip:   #f77728;
+      
+      --glass-bg:    rgba(19, 24, 34, 0.7);
+      --glass-border:rgba(255, 255, 255, 0.05);
+      --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+
+    [data-theme="light"] {
+      --bg:          #f8fafc;
+      --surface:     #ffffff;
+      --elevated:    #f1f5f9;
+      --overlay:     #e2e8f0;
+      --blue:        #4f46e5;
+      --blue-glow:   rgba(79,70,229,0.1);
+      --blue-border: rgba(79,70,229,0.2);
+      --gold:        #d97706;
+      --gold-glow:   rgba(217,119,6,0.1);
+      --gold-border: rgba(217,119,6,0.3);
+      --green:       #059669;
+      --green-glow:  rgba(5,150,105,0.1);
+      --green-border:rgba(5,150,105,0.2);
+      --yellow:      #d97706;
+      --red:         #dc2626;
+      --t1:          #0f172a;
+      --t2:          #334155;
+      --t3:          #64748b;
+      
+      --glass-bg:    rgba(255, 255, 255, 0.7);
+      --glass-border:rgba(0, 0, 0, 0.05);
+      --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+    }
+
     body {
-      font-family: 'DM Sans', sans-serif;
-      background: #070711;
-      color: #EEEEFF;
-      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--t1);
+      font-size: 14px;
       line-height: 1.5;
       display: flex;
       flex-direction: column;
       height: 100vh;
-    }
-
-    /* ── VARIABLES ─────────────────────────────────────────────── */
-    :root {
-      --bg:          #070711;
-      --surface:     #0F0F1E;
-      --elevated:    #161630;
-      --overlay:     #1E1E40;
-      --blue:        #4F8EF7;
-      --blue-glow:   rgba(79,142,247,0.12);
-      --blue-border: rgba(79,142,247,0.22);
-      --gold:        #F5A623;
-      --gold-glow:   rgba(245,166,35,0.10);
-      --gold-border: rgba(245,166,35,0.32);
-      --green:       #2ED47A;
-      --green-glow:  rgba(46,212,122,0.10);
-      --green-border:rgba(46,212,122,0.20);
-      --yellow:      #FFD166;
-      --red:         #FF5F5F;
-      --t1:          #EEEEFF;
-      --t2:          #8B8FA8;
-      --t3:          #4A4D6A;
-      --amazon:      #FF9900;
-      --flipkart:    #2874F0;
-      --mmt:         #D42B2B;
-      --goibibo:     #E8390E;
-      --cleartrip:   #E87722;
+      margin: 0 auto;
+      max-width: 1200px;
+      border-left: 1px solid var(--elevated);
+      border-right: 1px solid var(--elevated);
+      transition: background 0.3s ease, color 0.3s ease;
     }
 
     /* ── HEADER ────────────────────────────────────────────────── */
     .header {
       flex-shrink: 0;
-      background: var(--bg);
+      background: var(--surface);
       border-bottom: 1px solid var(--elevated);
-      padding: 10px 14px;
+      padding: 12px 16px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      z-index: 10;
+    }
+    .logo-container {
+      flex: 1;
     }
     .logo {
-      font-family: 'Syne', sans-serif;
-      font-size: 15px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 20px;
       font-weight: 800;
-      letter-spacing: -0.02em;
-      flex-shrink: 0;
+      letter-spacing: -0.03em;
     }
     .logo span { color: var(--blue); }
-    .mode-toggle {
-      flex: 1;
-      display: flex;
-      background: var(--elevated);
-      border-radius: 999px;
-      padding: 3px;
-      gap: 2px;
-    }
-    .mode-btn {
-      flex: 1;
-      font-family: 'DM Sans', sans-serif;
+    .tagline {
       font-size: 11px;
-      font-weight: 600;
-      padding: 5px 6px;
-      border-radius: 999px;
-      border: none;
-      background: none;
       color: var(--t3);
-      cursor: pointer;
-      transition: all 0.18s ease;
+      font-weight: 500;
+    }
+    
+    .header-actions {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
+      gap: 8px;
     }
-    .mode-btn.active-products {
-      background: var(--blue-glow);
-      color: var(--blue);
-      border: 1px solid var(--blue-border);
-    }
-    .mode-btn.active-travel {
-      background: rgba(0,196,204,0.10);
-      color: #00C4CC;
-      border: 1px solid rgba(0,196,204,0.22);
-    }
-    .settings-btn {
-      flex-shrink: 0;
-      width: 28px; height: 28px;
-      background: none;
-      border: 1px solid var(--elevated);
+    .icon-btn {
+      width: 32px; height: 32px;
+      background: var(--elevated);
+      border: 1px solid transparent;
       border-radius: 8px;
-      color: var(--t3);
+      color: var(--t2);
       cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       font-size: 14px;
-      transition: all 0.15s;
+      transition: all 0.2s;
     }
-    .settings-btn:hover { border-color: var(--blue-border); color: var(--blue); }
+    .icon-btn:hover { border-color: var(--blue-border); color: var(--blue); background: var(--blue-glow); }
 
     /* ── SCROLL AREA ───────────────────────────────────────────── */
     .scroll-area {
       flex: 1;
       overflow-y: auto;
-      padding: 14px;
+      padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
+      position: relative;
     }
     .scroll-area::-webkit-scrollbar { width: 4px; }
     .scroll-area::-webkit-scrollbar-track { background: transparent; }
     .scroll-area::-webkit-scrollbar-thumb { background: var(--elevated); border-radius: 2px; }
 
-    /* ── SCREENS ───────────────────────────────────────────────── */
-    .screen { display: none; flex-direction: column; gap: 12px; }
-    .screen.active { display: flex; }
-
-    /* ── INPUT AREA — PRODUCTS ─────────────────────────────────── */
-    .drop-zone {
-      border: 1.5px dashed var(--elevated);
-      border-radius: 12px;
-      padding: 20px 16px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s;
+    /* ── FREE TEXT / VOICE INPUT ───────────────────────────────── */
+    .search-container {
       position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
-    .drop-zone:hover, .drop-zone.drag-over {
-      border-color: var(--blue-border);
-      background: var(--blue-glow);
-    }
-    .drop-zone input[type="file"] {
-      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
-    }
-    .drop-icon { font-size: 28px; margin-bottom: 7px; }
-    .drop-title { font-size: 12px; font-weight: 600; color: var(--t1); margin-bottom: 3px; }
-    .drop-sub { font-size: 11px; color: var(--t3); }
-    .drop-sub span { color: var(--blue); }
-
-    /* Preview of pasted image */
-    .paste-preview {
-      display: none;
-      position: relative;
-      border-radius: 10px;
-      overflow: hidden;
-      border: 1px solid var(--blue-border);
-    }
-    .paste-preview img { width: 100%; display: block; max-height: 140px; object-fit: cover; }
-    .paste-preview-remove {
-      position: absolute; top: 6px; right: 6px;
-      width: 22px; height: 22px;
-      background: rgba(0,0,0,0.7);
-      border: none; border-radius: 50%;
-      color: #fff; font-size: 12px;
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-    }
-
-    .divider {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 10px; color: var(--t3);
-    }
-    .divider::before, .divider::after {
-      content: ''; flex: 1; height: 1px; background: var(--elevated);
-    }
-
-    .input-row { display: flex; gap: 6px; }
-    .text-input {
-      flex: 1;
-      background: var(--elevated);
-      border: 1px solid var(--elevated);
-      border-radius: 9px;
-      padding: 9px 12px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 13px;
-      color: var(--t1);
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    .text-input:focus { border-color: var(--blue-border); }
-    .text-input::placeholder { color: var(--t3); }
-
-    .icon-btn {
-      width: 38px; height: 38px;
-      background: var(--elevated);
-      border: 1px solid var(--elevated);
-      border-radius: 9px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px;
-      cursor: pointer;
-      transition: all 0.15s;
-      flex-shrink: 0;
-    }
-    .icon-btn:hover { border-color: var(--blue-border); background: var(--blue-glow); }
-    .icon-btn.voice-active {
-      background: rgba(255,95,95,0.12);
-      border-color: rgba(255,95,95,0.3);
-      animation: voicePulse 1s ease-in-out infinite;
-    }
-    @keyframes voicePulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
-
-    .btn-search {
-      width: 100%;
-      background: var(--blue);
-      color: #fff;
-      border: none;
-      border-radius: 9px;
-      padding: 10px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.15s;
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-    }
-    .btn-search:hover { background: #3A6DD4; }
-    .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    /* ── INPUT AREA — TRAVEL ───────────────────────────────────── */
-    .voice-listen-area {
+    .search-box {
       background: var(--surface);
       border: 1px solid var(--elevated);
       border-radius: 12px;
-      padding: 20px;
-      text-align: center;
-      cursor: pointer;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
       transition: all 0.2s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     }
-    .voice-listen-area:hover { border-color: rgba(0,196,204,0.22); }
-    .voice-listen-area.listening {
-      border-color: rgba(255,95,95,0.3);
-      background: rgba(255,95,95,0.04);
+    .search-box:focus-within {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px var(--blue-glow);
     }
-    .mic-btn {
-      width: 52px; height: 52px;
-      background: linear-gradient(135deg, rgba(0,196,204,0.15) 0%, var(--blue-glow) 100%);
-      border: 1px solid rgba(0,196,204,0.25);
+    .search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--t1);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      outline: none;
+    }
+    .search-input::placeholder { color: var(--t3); }
+    
+    .mic-btn-main {
+      width: 36px; height: 36px;
+      background: var(--blue-glow);
+      color: var(--blue);
+      border: 1px solid var(--blue-border);
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-size: 24px;
-      margin: 0 auto 10px;
       cursor: pointer;
+      font-size: 16px;
       transition: all 0.2s;
     }
-    .mic-btn.listening {
-      background: rgba(255,95,95,0.15);
-      border-color: rgba(255,95,95,0.4);
-      animation: micPulse 1.2s ease-in-out infinite;
+    .mic-btn-main:hover {
+      background: var(--blue);
+      color: white;
     }
-    @keyframes micPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
-    .voice-label { font-size: 12px; font-weight: 600; color: var(--t1); }
-    .voice-sub { font-size: 11px; color: var(--t3); margin-top: 3px; }
-    .voice-transcript {
-      display: none;
-      background: var(--elevated);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 12px;
-      color: var(--blue);
-      font-style: italic;
-      margin-top: 8px;
+    .mic-btn-main.listening {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--red);
+      border-color: rgba(239, 68, 68, 0.3);
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
     }
 
-    /* Waveform */
-    .waveform {
-      display: none;
-      align-items: center;
-      justify-content: center;
-      gap: 3px;
-      height: 24px;
-      margin: 8px 0 0;
-    }
-    .waveform.show { display: flex; }
-    .wave-bar {
-      width: 3px;
-      background: var(--red, #FF5F5F);
-      border-radius: 999px;
-      animation: wave 0.7s ease-in-out infinite;
-    }
-    .wave-bar:nth-child(1){ animation-delay:0s;   height:8px; }
-    .wave-bar:nth-child(2){ animation-delay:0.1s; height:16px; }
-    .wave-bar:nth-child(3){ animation-delay:0.2s; height:22px; }
-    .wave-bar:nth-child(4){ animation-delay:0.15s;height:18px; }
-    .wave-bar:nth-child(5){ animation-delay:0.05s;height:12px; }
-    .wave-bar:nth-child(6){ animation-delay:0.25s;height:20px; }
-    .wave-bar:nth-child(7){ animation-delay:0.1s; height:8px; }
-    @keyframes wave { 0%,100%{transform:scaleY(0.4)} 50%{transform:scaleY(1)} }
-
-    /* Route fields */
-    .route-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .field-group { display: flex; flex-direction: column; gap: 4px; }
-    .field-label { font-size: 10px; font-weight: 600; color: var(--t3); text-transform: uppercase; letter-spacing: 0.08em; }
-    .select-input {
-      background: var(--elevated);
-      border: 1px solid var(--elevated);
-      border-radius: 9px;
-      padding: 8px 10px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 12px;
-      color: var(--t1);
-      outline: none;
-      cursor: pointer;
-      transition: border-color 0.15s;
+    .btn-primary {
       width: 100%;
-    }
-    .select-input:focus { border-color: rgba(0,196,204,0.3); }
-    .btn-search-travel {
-      width: 100%;
-      background: linear-gradient(135deg, rgba(0,196,204,0.8) 0%, var(--blue) 100%);
-      color: #fff;
+      background: linear-gradient(135deg, var(--blue) 0%, #3b82f6 100%);
+      color: white;
       border: none;
-      border-radius: 9px;
-      padding: 10px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 13px;
+      border-radius: 12px;
+      padding: 12px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.15s;
-      display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: transform 0.1s, opacity 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
     }
-    .btn-search-travel:hover { opacity: 0.88; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:active { transform: scale(0.98); }
 
-    /* ── IDENTIFICATION RESULT ─────────────────────────────────── */
-    .id-result {
+    /* ── PROGRESS UI ───────────────────────────────────────────── */
+    .progress-panel {
       display: none;
-      background: var(--surface);
-      border: 1px solid var(--elevated);
-      border-radius: 10px;
-      padding: 10px 12px;
-      gap: 8px;
-      align-items: center;
-    }
-    .id-result.show { display: flex; }
-    .id-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
-    .id-dot.medium { background: var(--yellow); }
-    .id-dot.low { background: var(--red); }
-    .id-info { flex: 1; min-width: 0; }
-    .id-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .id-conf { font-size: 10px; margin-top: 1px; }
-    .id-conf.high { color: var(--green); }
-    .id-conf.medium { color: var(--yellow); }
-    .id-conf.low { color: var(--red); }
-    .id-edit { font-size: 18px; cursor: pointer; color: var(--t3); flex-shrink: 0; transition: color 0.15s; }
-    .id-edit:hover { color: var(--blue); }
-
-    /* ── PROGRESS ──────────────────────────────────────────────── */
-    .progress-section {
-      display: none;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .progress-section.show { display: flex; }
-    .progress-label { font-size: 11px; color: var(--t2); font-weight: 500; }
-    .agent-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .agent-name {
-      font-size: 11px;
-      font-weight: 600;
-      width: 90px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-    .platform-dot-sm { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-    .progress-track {
-      flex: 1;
-      height: 4px;
-      background: var(--elevated);
-      border-radius: 999px;
-      overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%;
-      border-radius: 999px;
-      background: linear-gradient(90deg, var(--blue) 0%, var(--gold) 100%);
-      transition: width 0.5s ease;
-      width: 0%;
-    }
-    .agent-status { font-size: 10px; color: var(--t3); width: 52px; text-align: right; flex-shrink: 0; }
-    .agent-status.done { color: var(--green); }
-
-    /* ── SAVINGS BANNER ────────────────────────────────────────── */
-    .savings-banner {
-      display: none;
-      background: linear-gradient(135deg, var(--green-glow) 0%, var(--blue-glow) 100%);
-      border: 1px solid var(--green-border);
-      border-radius: 10px;
-      padding: 10px 14px;
-      text-align: center;
-    }
-    .savings-banner.show { display: block; }
-    .savings-label { font-size: 10px; font-weight: 600; color: var(--green); text-transform: uppercase; letter-spacing: 0.08em; }
-    .savings-value {
-      font-family: 'Syne', sans-serif;
-      font-size: 24px;
-      font-weight: 800;
-      color: var(--green);
-      letter-spacing: -0.02em;
-    }
-    .savings-note { font-size: 10px; color: var(--t3); margin-top: 2px; }
-
-    /* ── RESULT CARDS ──────────────────────────────────────────── */
-    .results-list { display: flex; flex-direction: column; gap: 8px; }
-
-    .result-card {
       background: var(--surface);
       border: 1px solid var(--elevated);
       border-radius: 12px;
-      padding: 12px;
-      transition: border-color 0.2s;
-      animation: cardIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+      padding: 16px;
+      flex-direction: column;
+      gap: 16px;
     }
-    @keyframes cardIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-    .result-card.winner {
-      border-color: var(--gold-border);
-      background: linear-gradient(135deg, var(--surface) 0%, rgba(245,166,35,0.04) 100%);
-      box-shadow: 0 0 18px var(--gold-glow);
-      animation: cardIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both, winnerPulse 2.5s 0.4s ease-in-out infinite;
-    }
-    @keyframes winnerPulse { 0%,100%{box-shadow:0 0 12px var(--gold-glow)} 50%{box-shadow:0 0 22px rgba(245,166,35,0.2)} }
-
-    .card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-    .card-platform { display: flex; align-items: center; gap: 6px; }
-    .card-platform-dot { width: 8px; height: 8px; border-radius: 50%; }
-    .card-platform-name { font-size: 12px; font-weight: 700; }
-    .winner-chip {
-      font-size: 9px; font-weight: 700;
-      color: var(--gold);
-      background: var(--gold-glow);
-      border: 1px solid var(--gold-border);
-      padding: 2px 8px;
-      border-radius: 999px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-
-    .card-price {
-      font-family: 'Syne', sans-serif;
-      font-size: 26px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
+    .progress-panel.show { display: flex; }
+    
+    .progress-header {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 600;
+      font-size: 14px;
       color: var(--t1);
-      margin-bottom: 3px;
-    }
-    .card-breakdown { font-size: 10px; color: var(--t3); line-height: 1.6; }
-    .card-breakdown .card-off { color: var(--green); font-weight: 600; }
-
-    .card-meta {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid var(--elevated);
     }
-    .card-meta-item { font-size: 10px; color: var(--t3); display: flex; align-items: center; gap: 3px; }
-    .card-cashback { font-size: 10px; color: var(--yellow); margin-left: auto; }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--elevated);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
-    .btn-buy {
-      width: 100%;
-      margin-top: 10px;
-      background: var(--gold);
-      color: #111;
-      border: none;
-      border-radius: 8px;
-      padding: 9px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      letter-spacing: 0.02em;
-      transition: opacity 0.15s;
-      display: flex; align-items: center; justify-content: center; gap: 5px;
+    .agent-tracker {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
-    .btn-buy:hover { opacity: 0.88; }
-    .btn-view {
-      width: 100%;
-      margin-top: 8px;
-      background: none;
-      color: var(--t2);
+    
+    .agent-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px;
+      background: var(--bg);
+      border-radius: 8px;
       border: 1px solid var(--elevated);
-      border-radius: 8px;
-      padding: 7px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
     }
-    .btn-view:hover { border-color: var(--blue-border); color: var(--blue); }
-
-    /* ── FLIGHT CARD EXTRAS ─────────────────────────────────────── */
-    .flight-info {
+    
+    .agent-item-header {
       display: flex;
       align-items: center;
-      gap: 0;
-      margin: 6px 0 4px;
+      justify-content: space-between;
     }
-    .flight-time { font-size: 16px; font-weight: 700; font-family: 'Syne', sans-serif; }
-    .flight-arrow {
-      flex: 1;
-      text-align: center;
-      position: relative;
-    }
-    .flight-arrow::before {
-      content: '';
-      position: absolute;
-      top: 50%; left: 8px; right: 8px;
-      height: 1px;
-      background: var(--elevated);
-      transform: translateY(-50%);
-    }
-    .flight-dur { font-size: 9px; color: var(--t3); position: relative; z-index: 1; background: var(--surface); padding: 0 4px; }
-    .flight-no-badge {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 600;
-      background: var(--elevated);
-      border-radius: 5px;
-      padding: 2px 6px;
-      color: var(--t2);
-      margin-bottom: 4px;
-    }
-
-    /* ── NOVA REASONING ────────────────────────────────────────── */
-    .nova-reasoning {
-      display: none;
-      background: var(--surface);
-      border: 1px solid var(--elevated);
-      border-radius: 10px;
-      overflow: hidden;
-    }
-    .nova-reasoning.show { display: block; }
-    .nova-reasoning-toggle {
-      width: 100%;
-      background: none;
-      border: none;
-      padding: 10px 12px;
+    
+    .agent-brand {
       display: flex;
       align-items: center;
       gap: 6px;
-      cursor: pointer;
-      color: var(--t2);
-      font-family: 'DM Sans', sans-serif;
-      font-size: 11px;
       font-weight: 600;
-      text-align: left;
+      font-size: 13px;
     }
-    .nova-reasoning-toggle:hover { color: var(--blue); }
-    .toggle-arrow { margin-left: auto; transition: transform 0.2s; }
-    .toggle-arrow.open { transform: rotate(180deg); }
-    .nova-reasoning-body {
-      display: none;
-      padding: 0 12px 12px;
-      font-size: 11px;
-      color: var(--t2);
-      line-height: 1.7;
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    
+    .phase-container {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .phase {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--t3);
+    }
+    .phase-icon {
+      font-size: 10px;
+    }
+    .phase.active { color: var(--blue); font-weight: 500; }
+    .phase.done { color: var(--green); }
+    
+    .progress-bar {
+      height: 4px;
+      background: var(--elevated);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue) 0%, var(--gold) 100%);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    
+    /* ── RESULTS CARDS ─────────────────────────────────────────── */
+    .results-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+    .results-column {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(0,0,0,0.03);
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px dashed var(--elevated);
+      min-height: 100px;
+    }
+    [data-theme="dark"] .results-column {
+      background: rgba(255,255,255,0.02);
+    }
+    .results-column:empty::after {
+      content: attr(data-placeholder);
+      text-align: center;
+      padding: 24px;
+      color: var(--t3);
+      font-size: 12px;
+    }
+    
+    .result-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: var(--card-shadow);
+      animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .result-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .result-card.winner {
+      border: 1px solid var(--gold-border);
+      background: linear-gradient(135deg, var(--surface) 0%, rgba(245,158,11,0.05) 100%);
+      position: relative;
+      overflow: hidden;
+    }
+    .result-card.winner::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--gold), #fbbf24);
+    }
+
+    .best-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--gold-glow);
+      color: var(--gold);
+      padding: 4px 8px;
+      border-radius: 100px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .flight-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    
+    .airline-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .airline-logo {
+      width: 24px; height: 24px;
+      border-radius: 4px;
+      background: var(--elevated);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+    .airline-name { font-weight: 600; font-size: 15px; }
+    .flight-no { font-size: 12px; color: var(--t3); }
+    
+    .price-block { text-align: right; }
+    .price-main {
+      font-family: 'Outfit', sans-serif;
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--t1);
+      line-height: 1;
+    }
+    .price-orig {
+      font-size: 13px;
+      color: var(--t3);
+      text-decoration: line-through;
+      margin-top: 4px;
+    }
+
+    .route-visual {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 12px;
+      background: var(--bg);
+      border-radius: 8px;
+    }
+    .time-node { flex: 1; }
+    .time { font-family: 'Outfit', sans-serif; font-size: 18px; font-weight: 700; }
+    .city { font-size: 12px; color: var(--t3); margin-top: 2px; }
+    .time-node.end { text-align: right; }
+    
+    .duration-line {
+      flex: 1.5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+    .duration-text { font-size: 11px; color: var(--t2); font-weight: 500; margin-bottom: 4px; }
+    .line {
+      width: 100%; height: 1px; background: var(--elevated);
+      position: relative;
+    }
+    .line::after {
+      content: '✈';
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--t3);
+      font-size: 12px;
+    }
+
+    .offer-details {
+      padding-top: 12px;
       border-top: 1px solid var(--elevated);
-      padding-top: 10px;
+      margin-bottom: 16px;
     }
-    .nova-reasoning-body.open { display: block; }
+    .offer-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .offer-tag {
+      background: var(--green-glow);
+      color: var(--green);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .provider-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+    }
+    .provider {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .btn-book {
+      background: var(--blue-glow);
+      color: var(--blue);
+      border: 1px solid var(--blue-border);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .btn-book:hover {
+      background: var(--blue);
+      color: white;
+    }
+    .winner .btn-book {
+      background: var(--gold);
+      color: #000;
+      border: none;
+    }
+    .winner .btn-book:hover { background: #f59e0b; opacity: 0.9; }
 
     /* ── SETTINGS PANEL ────────────────────────────────────────── */
     .settings-panel {
       display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: var(--bg);
+      z-index: 20;
+      padding: 16px;
       flex-direction: column;
-      gap: 14px;
+      gap: 16px;
     }
     .settings-panel.show { display: flex; }
-    .settings-title {
-      font-family: 'Syne', sans-serif;
-      font-size: 14px;
-      font-weight: 700;
+    .settings-header {
       display: flex;
       align-items: center;
+      gap: 12px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .btn-back {
+      background: none; border: none; color: var(--t2); font-size: 18px; cursor: pointer;
+    }
+    
+    .setting-group {
+      display: flex;
+      flex-direction: column;
       gap: 8px;
     }
-    .settings-back {
-      background: none;
-      border: none;
-      color: var(--t2);
-      font-size: 18px;
-      cursor: pointer;
-      padding: 0 4px;
-      transition: color 0.15s;
-    }
-    .settings-back:hover { color: var(--blue); }
-    .settings-section-label { font-size: 10px; font-weight: 700; color: var(--t3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
-    .card-chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
-    .card-chip {
-      display: flex; align-items: center; gap: 5px;
-      background: var(--elevated);
-      border: 1px solid transparent;
-      border-radius: 8px;
-      padding: 6px 10px;
+    .setting-label {
       font-size: 11px;
       font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
-      color: var(--t2);
-    }
-    .card-chip.selected { background: var(--blue-glow); border-color: var(--blue-border); color: var(--blue); }
-    .card-chip .chip-check { display: none; font-size: 10px; }
-    .card-chip.selected .chip-check { display: inline; }
-    .settings-note { font-size: 10px; color: var(--t3); line-height: 1.6; padding: 8px 10px; background: var(--elevated); border-radius: 8px; }
-    .api-input {
-      background: var(--elevated);
-      border: 1px solid var(--elevated);
-      border-radius: 9px;
-      padding: 9px 12px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 12px;
-      color: var(--t1);
-      outline: none;
-      width: 100%;
-      transition: border-color 0.15s;
-    }
-    .api-input:focus { border-color: var(--blue-border); }
-    .btn-save {
-      background: var(--blue);
-      color: #fff;
-      border: none;
-      border-radius: 9px;
-      padding: 9px 18px;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-    .btn-save:hover { background: #3A6DD4; }
-
-    /* ── EMPTY STATE ───────────────────────────────────────────── */
-    .empty-state {
-      text-align: center;
-      padding: 24px 16px;
       color: var(--t3);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
-    .empty-icon { font-size: 36px; margin-bottom: 10px; opacity: 0.5; }
-    .empty-text { font-size: 12px; line-height: 1.6; }
+    
+    .card-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .card-chip {
+      background: var(--surface);
+      border: 1px solid var(--elevated);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .card-chip.selected {
+      background: var(--blue-glow);
+      border-color: var(--blue);
+      color: var(--blue);
+      font-weight: 500;
+    }
+    .card-chip::before { content: '+'; font-weight: bold; }
+    .card-chip.selected::before { content: '✓'; }
+    
+    .styled-input {
+      background: var(--surface);
+      border: 1px solid var(--elevated);
+      padding: 10px 12px;
+      border-radius: 8px;
+      color: var(--t1);
+      font-family: 'Inter', sans-serif;
+      width: 100%;
+      outline: none;
+    }
+    .styled-input:focus { border-color: var(--blue); }
 
     /* ── STATUS BAR ────────────────────────────────────────────── */
     .status-bar {
       flex-shrink: 0;
       background: var(--surface);
       border-top: 1px solid var(--elevated);
-      padding: 6px 14px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      padding: 8px 16px;
       font-size: 10px;
       color: var(--t3);
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
-    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
-    .status-dot.connecting { background: var(--yellow); animation: statusBlink 1s infinite; }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green);
+    }
     .status-dot.error { background: var(--red); }
-    @keyframes statusBlink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .status-dot.busy { background: var(--yellow); animation: blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
     .status-text { flex: 1; }
-    .status-model { color: var(--blue); font-weight: 600; }
 
-    /* ── TOAST ─────────────────────────────────────────────────── */
-    .toast {
-      position: fixed;
-      bottom: 48px;
-      left: 14px; right: 14px;
-      background: var(--overlay);
-      border: 1px solid var(--elevated);
-      border-radius: 10px;
-      padding: 10px 14px;
-      font-size: 12px;
-      color: var(--t1);
-      display: flex; align-items: center; gap: 8px;
-      transform: translateY(20px);
-      opacity: 0;
-      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-      pointer-events: none;
-      z-index: 100;
-    }
-    .toast.show { transform: translateY(0); opacity: 1; }
-
-    /* ── UTILITY ───────────────────────────────────────────────── */
-    .row { display: flex; align-items: center; gap: 6px; }
-    .flex-1 { flex: 1; }
+    /* ── UTILS ────────────────────────────────────────────── */
+    .hidden { display: none !important; }
   </style>
 </head>
-<body>
+<body data-theme="dark">
 
   <!-- HEADER -->
   <div class="header">
-    <div class="logo">Fare<span>Wise</span></div>
-    <div class="mode-toggle">
-      <button class="mode-btn active-products" id="btn-products" onclick="switchMode('products')">📦 Products</button>
-      <button class="mode-btn" id="btn-travel" onclick="switchMode('travel')">✈️ Travel</button>
+    <div class="logo-container">
+      <div class="logo">Fare<span>Wise</span></div>
+      <div class="tagline">Your smart companion for the cheapest flights.</div>
     </div>
-    <button class="settings-btn" onclick="toggleSettings()" title="Settings">⚙</button>
+    <div class="header-actions">
+      <button class="icon-btn" id="theme-toggle" onclick="toggleTheme()" title="Toggle Theme">🌙</button>
+      <button class="icon-btn" onclick="toggleSettings()" title="Settings">⚙</button>
+    </div>
   </div>
 
-  <!-- SCROLL AREA -->
-  <div class="scroll-area" id="scroll-area">
-
-    <!-- ══ PRODUCTS SCREEN ═════════════════════════════════════ -->
-    <div class="screen active" id="screen-products">
-
-      <!-- Drop Zone -->
-      <div class="drop-zone" id="drop-zone"
-           ondragover="handleDragOver(event)"
-           ondragleave="handleDragLeave(event)"
-           ondrop="handleDrop(event)">
-        <input type="file" accept="image/*" id="file-input" onchange="handleFileInput(event)">
-        <div class="drop-icon">📋</div>
-        <div class="drop-title">Paste or drop a WhatsApp screenshot</div>
-        <div class="drop-sub">Any product listing image · <span>Cmd+V to paste</span></div>
+  <!-- MAIN SCROLL AREA -->
+  <div class="scroll-area" id="main-view">
+    
+    <!-- SEARCH SECTION -->
+    <div class="search-container">
+      <div class="search-box">
+        <span style="font-size:16px;color:var(--t3)">✈️</span>
+        <input type="text" id="route-query" class="search-input" 
+               placeholder="e.g., Mumbai to Delhi this Friday morning"
+               onkeydown="if(event.key==='Enter') startSearch()">
+        <button class="mic-btn-main" id="mic-btn" onclick="toggleVoice()" title="Voice Search">🎤</button>
       </div>
+      <button class="btn-primary" onclick="startSearch()">🔍 Search Flights</button>
+    </div>
 
-      <!-- Image preview after paste/upload -->
-      <div class="paste-preview" id="paste-preview">
-        <img id="preview-img" src="" alt="Product screenshot">
-        <button class="paste-preview-remove" onclick="clearPreview()">✕</button>
+    <!-- PROGRESS UI -->
+    <div class="progress-panel" id="progress-panel">
+      <div class="progress-header">
+        <div class="spinner" id="main-spinner"></div>
+        <span id="progress-main-text">Analyzing your request...</span>
       </div>
-
-      <div class="divider">or type / speak</div>
-
-      <div class="input-row">
-        <input class="text-input" id="product-query" type="text"
-               placeholder="Sony WH-1000XM5, Samsung S25+..."
-               onkeydown="if(event.key==='Enter') startProductSearch()">
-        <button class="icon-btn" id="voice-btn-products" onclick="toggleVoiceProducts()" title="Voice input">🎤</button>
-      </div>
-
-      <button class="btn-search" id="btn-search-products" onclick="startProductSearch()">
-        <span>⚡</span> Find Best Price
-      </button>
-
-      <!-- Identification result -->
-      <div class="id-result" id="id-result">
-        <div class="id-dot" id="id-dot"></div>
-        <div class="id-info">
-          <div class="id-name" id="id-name">Sony WH-1000XM5 Headphones</div>
-          <div class="id-conf high" id="id-conf">● 96% confidence</div>
-        </div>
-        <div class="id-edit" onclick="editQuery()">✏️</div>
-      </div>
-
-      <!-- Search progress -->
-      <div class="progress-section" id="progress-products">
-        <div class="progress-label">Searching platforms...</div>
-        <div class="agent-row">
-          <div class="agent-name">
-            <div class="platform-dot-sm" style="background:var(--amazon)"></div>
-            Amazon
+      
+      <div class="agent-tracker" id="agent-tracker">
+        <!-- Cleartrip Tracker -->
+        <div class="agent-item" id="tracker-cleartrip">
+          <div class="agent-item-header">
+            <div class="agent-brand">
+              <div class="dot" style="background:var(--cleartrip)"></div> Cleartrip
+            </div>
+            <span style="font-size:10px;color:var(--t3)" id="count-cleartrip">Pending</span>
           </div>
-          <div class="progress-track"><div class="progress-fill" id="prog-amazon"></div></div>
-          <div class="agent-status" id="status-amazon">–</div>
-        </div>
-        <div class="agent-row">
-          <div class="agent-name">
-            <div class="platform-dot-sm" style="background:var(--flipkart)"></div>
-            Flipkart
+          <div class="phase-container">
+            <div class="phase" id="phase1-cleartrip"><span class="phase-icon">○</span> Phase 1: Search & Extract</div>
+            <div class="phase" id="phase2-cleartrip"><span class="phase-icon">○</span> Phase 2: Analyze Offers</div>
           </div>
-          <div class="progress-track"><div class="progress-fill" id="prog-flipkart"></div></div>
-          <div class="agent-status" id="status-flipkart">–</div>
+          <div class="progress-bar"><div class="progress-fill" id="prog-cleartrip"></div></div>
         </div>
-      </div>
-
-      <!-- Savings banner -->
-      <div class="savings-banner" id="savings-products">
-        <div class="savings-label">You save</div>
-        <div class="savings-value" id="savings-value-products">₹0</div>
-        <div class="savings-note">vs worst option + your best card</div>
-      </div>
-
-      <!-- Results -->
-      <div class="results-list" id="results-products"></div>
-
-      <!-- Nova Reasoning -->
-      <div class="nova-reasoning" id="nova-reasoning-products">
-        <button class="nova-reasoning-toggle" onclick="toggleReasoning('products')">
-          🧠 Nova's reasoning
-          <span class="toggle-arrow" id="arrow-products">▾</span>
-        </button>
-        <div class="nova-reasoning-body" id="reasoning-body-products">
-          Amazon wins because your HDFC Regalia card gives 15% instant discount (₹3,748), compared to Axis Flipkart at 13% (₹3,444). Both platforms offer free delivery. The effective saving over Flipkart is ₹1,749.
-        </div>
-      </div>
-
-    </div><!-- /screen-products -->
-
-    <!-- ══ TRAVEL SCREEN ═══════════════════════════════════════ -->
-    <div class="screen" id="screen-travel">
-
-      <!-- Voice input -->
-      <div class="voice-listen-area" id="voice-area" onclick="toggleVoiceTravel()">
-        <div class="mic-btn" id="mic-btn">🎤</div>
-        <div class="voice-label" id="voice-label">Tap to speak your route</div>
-        <div class="voice-sub" id="voice-sub">"Mumbai to Delhi, this Friday"</div>
-        <div class="waveform" id="waveform">
-          <div class="wave-bar"></div><div class="wave-bar"></div>
-          <div class="wave-bar"></div><div class="wave-bar"></div>
-          <div class="wave-bar"></div><div class="wave-bar"></div>
-          <div class="wave-bar"></div>
-        </div>
-        <div class="voice-transcript" id="voice-transcript"></div>
-      </div>
-
-      <div class="divider">or fill manually</div>
-
-      <!-- Route fields -->
-      <div class="route-grid">
-        <div class="field-group">
-          <div class="field-label">From</div>
-          <select class="select-input" id="travel-from">
-            <option value="">Select city</option>
-            <option value="BOM">Mumbai (BOM)</option>
-            <option value="DEL">Delhi (DEL)</option>
-            <option value="BLR">Bengaluru (BLR)</option>
-            <option value="HYD">Hyderabad (HYD)</option>
-            <option value="MAA">Chennai (MAA)</option>
-            <option value="CCU">Kolkata (CCU)</option>
-            <option value="PNQ">Pune (PNQ)</option>
-            <option value="AMD">Ahmedabad (AMD)</option>
-            <option value="COK">Kochi (COK)</option>
-            <option value="GOI">Goa (GOI)</option>
-          </select>
-        </div>
-        <div class="field-group">
-          <div class="field-label">To</div>
-          <select class="select-input" id="travel-to">
-            <option value="">Select city</option>
-            <option value="DEL">Delhi (DEL)</option>
-            <option value="BOM">Mumbai (BOM)</option>
-            <option value="BLR">Bengaluru (BLR)</option>
-            <option value="HYD">Hyderabad (HYD)</option>
-            <option value="MAA">Chennai (MAA)</option>
-            <option value="CCU">Kolkata (CCU)</option>
-            <option value="PNQ">Pune (PNQ)</option>
-            <option value="AMD">Ahmedabad (AMD)</option>
-            <option value="COK">Kochi (COK)</option>
-            <option class="GOI">Goa (GOI)</option>
-          </select>
-        </div>
-      </div>
-      <div class="route-grid">
-        <div class="field-group">
-          <div class="field-label">Travel Date</div>
-          <input class="select-input" type="date" id="travel-date">
-        </div>
-        <div class="field-group">
-          <div class="field-label">Class</div>
-          <select class="select-input" id="travel-class">
-            <option value="economy">Economy</option>
-            <option value="premium_economy">Premium Economy</option>
-            <option value="business">Business</option>
-          </select>
-        </div>
-      </div>
-
-      <button class="btn-search-travel" onclick="startTravelSearch()">
-        <span>✈️</span> Find Cheapest Flight
-      </button>
-
-      <!-- Search progress — travel -->
-      <div class="progress-section" id="progress-travel">
-        <div class="progress-label">Searching across OTAs...</div>
-        <div class="agent-row">
-          <div class="agent-name">
-            <div class="platform-dot-sm" style="background:var(--mmt)"></div>
-            MakeMyTrip
+        
+        <!-- Ixigo Tracker -->
+        <div class="agent-item" id="tracker-ixigo">
+          <div class="agent-item-header">
+            <div class="agent-brand">
+              <div class="dot" style="background:var(--ixigo)"></div> Ixigo
+            </div>
+            <span style="font-size:10px;color:var(--t3)" id="count-ixigo">Pending</span>
           </div>
-          <div class="progress-track"><div class="progress-fill" id="prog-mmt"></div></div>
-          <div class="agent-status" id="status-mmt">–</div>
-        </div>
-        <div class="agent-row">
-          <div class="agent-name">
-            <div class="platform-dot-sm" style="background:var(--goibibo)"></div>
-            Goibibo
+          <div class="phase-container">
+            <div class="phase" id="phase1-ixigo"><span class="phase-icon">○</span> Phase 1: Search & Extract</div>
+            <div class="phase" id="phase2-ixigo"><span class="phase-icon">○</span> Phase 2: Analyze Offers</div>
           </div>
-          <div class="progress-track"><div class="progress-fill" id="prog-goibibo"></div></div>
-          <div class="agent-status" id="status-goibibo">–</div>
+          <div class="progress-bar"><div class="progress-fill" id="prog-ixigo"></div></div>
         </div>
-        <div class="agent-row">
-          <div class="agent-name">
-            <div class="platform-dot-sm" style="background:var(--cleartrip)"></div>
-            Cleartrip
-          </div>
-          <div class="progress-track"><div class="progress-fill" id="prog-cleartrip"></div></div>
-          <div class="agent-status" id="status-cleartrip">–</div>
-        </div>
-      </div>
-
-      <!-- Savings banner — travel -->
-      <div class="savings-banner" id="savings-travel">
-        <div class="savings-label">Cheapest fare found</div>
-        <div class="savings-value" id="savings-value-travel">₹0</div>
-        <div class="savings-note" id="savings-note-travel">with your best card applied</div>
-      </div>
-
-      <!-- Results — travel -->
-      <div class="results-list" id="results-travel"></div>
-
-      <!-- Nova Reasoning — travel -->
-      <div class="nova-reasoning" id="nova-reasoning-travel">
-        <button class="nova-reasoning-toggle" onclick="toggleReasoning('travel')">
-          🧠 Nova's reasoning
-          <span class="toggle-arrow" id="arrow-travel">▾</span>
-        </button>
-        <div class="nova-reasoning-body" id="reasoning-body-travel">
-          Goibibo wins because SBI's 14% discount (₹831) is higher than HDFC's 8% on Cleartrip (₹475) or MakeMyTrip's standard rate. The same IndiGo 6E-204 flight is priced ₹1,001 lower on Goibibo before card discounts.
-        </div>
-      </div>
-
-    </div><!-- /screen-travel -->
-
-    <!-- ══ SETTINGS PANEL ══════════════════════════════════════ -->
-    <div class="settings-panel" id="settings-panel">
-      <div class="settings-title">
-        <button class="settings-back" onclick="toggleSettings()">←</button>
-        Settings
-      </div>
-
-      <div>
-        <div class="settings-section-label">Your Bank Cards</div>
-        <p class="settings-note" style="margin-bottom:8px">Select the cards you hold. FareWise applies the best offer automatically. We never store card numbers.</p>
-        <div class="card-chip-list" id="card-chips">
-          <div class="card-chip selected" data-card="HDFC Regalia" onclick="toggleCard(this)"><span class="chip-check">✓</span> HDFC Regalia</div>
-          <div class="card-chip" data-card="HDFC Millennia" onclick="toggleCard(this)"><span class="chip-check">✓</span> HDFC Millennia</div>
-          <div class="card-chip selected" data-card="SBI SimplyCLICK" onclick="toggleCard(this)"><span class="chip-check">✓</span> SBI SimplyCLICK</div>
-          <div class="card-chip" data-card="SBI Cashback" onclick="toggleCard(this)"><span class="chip-check">✓</span> SBI Cashback</div>
-          <div class="card-chip selected" data-card="Axis Flipkart" onclick="toggleCard(this)"><span class="chip-check">✓</span> Axis Flipkart</div>
-          <div class="card-chip" data-card="Axis Magnus" onclick="toggleCard(this)"><span class="chip-check">✓</span> Axis Magnus</div>
-          <div class="card-chip" data-card="ICICI Amazon Pay" onclick="toggleCard(this)"><span class="chip-check">✓</span> ICICI Amazon Pay</div>
-          <div class="card-chip" data-card="Kotak Essentia" onclick="toggleCard(this)"><span class="chip-check">✓</span> Kotak Essentia</div>
-        </div>
-      </div>
-
-      <div>
-        <div class="settings-section-label">Backend API URL</div>
-        <input class="api-input" id="api-url" type="text"
-               placeholder="http://localhost:8000"
-               value="http://localhost:8000">
-        <p class="settings-note" style="margin-top:6px">FareWise backend server (FastAPI). Run locally or deploy to AWS.</p>
-      </div>
-
-      <div>
-        <div class="settings-section-label">Default Mode</div>
-        <select class="select-input" id="default-mode">
-          <option value="products">📦 Products</option>
-          <option value="travel">✈️ Travel</option>
-        </select>
-      </div>
-
-      <button class="btn-save" onclick="saveSettings()">Save Settings</button>
-
-      <div class="settings-note">
-        v1.0.0 · Amazon Nova AI Hackathon 2026<br>
-        No card numbers or payment info is ever stored.
       </div>
     </div>
 
-  </div><!-- /scroll-area -->
+    <!-- RESULTS CONTAINER -->
+    <div class="results-container" id="results-container">
+      <!-- Cards injected here -->
+    </div>
+
+  </div> <!-- /scroll-area -->
+
+  <!-- SETTINGS PANEL -->
+  <div class="settings-panel" id="settings-panel">
+    <div class="settings-header">
+      <button class="btn-back" onclick="toggleSettings()">←</button>
+      Settings
+    </div>
+    
+    <div class="setting-group">
+      <div class="setting-label">Your Bank Cards</div>
+      <p style="font-size:11px;color:var(--t3);margin-bottom:4px">Select your cards for AI-driven offer calculation.</p>
+      <div class="card-grid" id="card-grid">
+        <div class="card-chip selected" data-card="HDFC Regalia" onclick="toggleCard(this)">HDFC Regalia</div>
+        <div class="card-chip" data-card="HDFC Millennia" onclick="toggleCard(this)">HDFC Millennia</div>
+        <div class="card-chip selected" data-card="SBI SimplyCLICK" onclick="toggleCard(this)">SBI SimplyCLICK</div>
+        <div class="card-chip" data-card="Axis Atlas" onclick="toggleCard(this)">Axis Atlas</div>
+        <div class="card-chip" data-card="ICICI Amazon Pay" onclick="toggleCard(this)">ICICI APay</div>
+      </div>
+    </div>
+    
+    <div class="setting-group" style="margin-top:10px">
+      <div class="setting-label">Backend API URL</div>
+      <input type="text" id="api-url" class="styled-input" value="http://localhost:8000">
+    </div>
+    
+    <button class="btn-primary" style="margin-top:auto" onclick="saveSettings()">Save Configuration</button>
+  </div>
 
   <!-- STATUS BAR -->
   <div class="status-bar">
     <div class="status-dot" id="status-dot"></div>
-    <div class="status-text" id="status-text">Ready</div>
-    <div class="status-model">Nova Act</div>
+    <div class="status-text" id="status-text">Backend: Disconnected</div>
+    <div style="font-weight:600;color:var(--blue)">Nova Agents</div>
   </div>
 
-  <!-- TOAST -->
-  <div class="toast" id="toast">
-    <span id="toast-icon">✓</span>
-    <span id="toast-msg">Settings saved</span>
-  </div>
-
+  <!-- MAIN SCRIPT -->
   <script>
-  // ── STATE ───────────────────────────────────────────────────────
-  const state = {
-    mode: 'products',       // 'products' | 'travel'
-    showSettings: false,
-    pastedImage: null,      // base64 image data
-    voiceActiveProducts: false,
-    voiceActiveTravel: false,
-    wsProducts: null,
-    wsTravel: null,
-    selectedCards: ['HDFC Regalia', 'SBI SimplyCLICK', 'Axis Flipkart'],
-    apiUrl: 'http://localhost:8000',
-    recognition: null,
-  };
-
-  // ── INIT ────────────────────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', () => {
-    loadSettings();
-    setTodayAsMinDate();
-    // Paste listener for screenshots
-    document.addEventListener('paste', handlePaste);
-  });
-
-  function setTodayAsMinDate() {
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('travel-date').min = today;
-    document.getElementById('travel-date').value = today;
-  }
-
-  // ── MODE SWITCHING ──────────────────────────────────────────────
-  function switchMode(mode) {
-    state.mode = mode;
-    // Toggle screens
-    document.getElementById('screen-products').classList.toggle('active', mode === 'products');
-    document.getElementById('screen-travel').classList.toggle('active', mode === 'travel');
-    // Toggle settings visibility
-    if (state.showSettings) toggleSettings();
-    // Update buttons
-    const btnP = document.getElementById('btn-products');
-    const btnT = document.getElementById('btn-travel');
-    btnP.className = 'mode-btn' + (mode === 'products' ? ' active-products' : '');
-    btnT.className = 'mode-btn' + (mode === 'travel'   ? ' active-travel'   : '');
-    // Scroll to top
-    document.getElementById('scroll-area').scrollTop = 0;
-  }
-
-  // ── SETTINGS ────────────────────────────────────────────────────
-  function toggleSettings() {
-    state.showSettings = !state.showSettings;
-    document.getElementById('settings-panel').classList.toggle('show', state.showSettings);
-    document.getElementById('screen-products').classList.toggle('active',
-      !state.showSettings && state.mode === 'products');
-    document.getElementById('screen-travel').classList.toggle('active',
-      !state.showSettings && state.mode === 'travel');
-  }
-
-  function toggleCard(el) {
-    el.classList.toggle('selected');
-    const card = el.dataset.card;
-    if (el.classList.contains('selected')) {
-      if (!state.selectedCards.includes(card)) state.selectedCards.push(card);
-    } else {
-      state.selectedCards = state.selectedCards.filter(c => c !== card);
-    }
-  }
-
-  function saveSettings() {
-    state.apiUrl = document.getElementById('api-url').value.trim() || 'http://localhost:8000';
-    // Save to chrome.storage.local if available, else localStorage
-    const data = { selectedCards: state.selectedCards, apiUrl: state.apiUrl,
-                   defaultMode: document.getElementById('default-mode').value };
-    try { chrome.storage.local.set(data); } catch(e) { localStorage.setItem('fw', JSON.stringify(data)); }
-    showToast('✓', 'Settings saved');
-    toggleSettings();
-  }
-
-  function loadSettings() {
-    const load = (data) => {
-      if (data.selectedCards) {
-        state.selectedCards = data.selectedCards;
-        document.querySelectorAll('.card-chip').forEach(el => {
-          const selected = data.selectedCards.includes(el.dataset.card);
-          el.classList.toggle('selected', selected);
-        });
-      }
-      if (data.apiUrl) {
-        state.apiUrl = data.apiUrl;
-        document.getElementById('api-url').value = data.apiUrl;
-      }
+    const state = {
+      theme: 'dark',
+      apiUrl: 'http://localhost:8000',
+      cards: ['HDFC Regalia', 'SBI SimplyCLICK'],
+      ws: null,
+      voiceActive: false,
+      recognition: null
     };
-    try {
-      chrome.storage.local.get(['selectedCards','apiUrl','defaultMode'], load);
-    } catch(e) {
-      const d = localStorage.getItem('fw');
-      if (d) load(JSON.parse(d));
-    }
-  }
 
-  // ── PASTE HANDLER ────────────────────────────────────────────────
-  function handlePaste(e) {
-    if (state.mode !== 'products' || state.showSettings) return;
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile();
-        loadImageFile(file);
-        break;
-      }
-    }
-  }
-
-  function handleDragOver(e) {
-    e.preventDefault();
-    document.getElementById('drop-zone').classList.add('drag-over');
-  }
-  function handleDragLeave(e) {
-    document.getElementById('drop-zone').classList.remove('drag-over');
-  }
-  function handleDrop(e) {
-    e.preventDefault();
-    document.getElementById('drop-zone').classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) loadImageFile(file);
-  }
-  function handleFileInput(e) {
-    const file = e.target.files[0];
-    if (file) loadImageFile(file);
-  }
-
-  function loadImageFile(file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      state.pastedImage = e.target.result;
-      document.getElementById('preview-img').src = e.target.result;
-      document.getElementById('paste-preview').style.display = 'block';
-      document.getElementById('drop-zone').style.display = 'none';
-      showToast('📋', 'Image ready — tap "Find Best Price"');
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function clearPreview() {
-    state.pastedImage = null;
-    document.getElementById('paste-preview').style.display = 'none';
-    document.getElementById('drop-zone').style.display = 'block';
-    document.getElementById('file-input').value = '';
-  }
-
-  // ── VOICE — PRODUCTS ────────────────────────────────────────────
-  function toggleVoiceProducts() {
-    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      showToast('⚠️', 'Voice not supported in this browser');
-      return;
-    }
-    const btn = document.getElementById('voice-btn-products');
-    if (state.voiceActiveProducts) {
-      state.voiceActiveProducts = false;
-      btn.classList.remove('voice-active');
-      if (state.recognition) state.recognition.stop();
-      return;
-    }
-    state.voiceActiveProducts = true;
-    btn.classList.add('voice-active');
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    state.recognition = new SR();
-    state.recognition.lang = 'en-IN';
-    state.recognition.continuous = false;
-    state.recognition.interimResults = false;
-    state.recognition.onresult = (e) => {
-      const text = e.results[0][0].transcript;
-      document.getElementById('product-query').value = text;
-      state.voiceActiveProducts = false;
-      btn.classList.remove('voice-active');
-    };
-    state.recognition.onerror = () => {
-      state.voiceActiveProducts = false;
-      btn.classList.remove('voice-active');
-      showToast('⚠️', 'Could not hear you. Try again.');
-    };
-    state.recognition.onend = () => {
-      state.voiceActiveProducts = false;
-      btn.classList.remove('voice-active');
-    };
-    state.recognition.start();
-  }
-
-  // ── VOICE — TRAVEL ──────────────────────────────────────────────
-  function toggleVoiceTravel() {
-    const area   = document.getElementById('voice-area');
-    const micBtn = document.getElementById('mic-btn');
-    const label  = document.getElementById('voice-label');
-    const sub    = document.getElementById('voice-sub');
-    const wave   = document.getElementById('waveform');
-    const trans  = document.getElementById('voice-transcript');
-
-    if (state.voiceActiveTravel) {
-      state.voiceActiveTravel = false;
-      area.classList.remove('listening');
-      micBtn.classList.remove('listening');
-      wave.classList.remove('show');
-      trans.style.display = 'none';
-      label.textContent = 'Tap to speak your route';
-      sub.textContent = '"Mumbai to Delhi, this Friday"';
-      if (state.recognition) state.recognition.stop();
-      return;
-    }
-
-    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      showToast('⚠️', 'Voice not supported in this browser');
-      return;
-    }
-
-    state.voiceActiveTravel = true;
-    area.classList.add('listening');
-    micBtn.classList.add('listening');
-    micBtn.textContent = '🔴';
-    wave.classList.add('show');
-    trans.style.display = 'block';
-    trans.textContent = 'Listening...';
-    label.textContent = 'Listening...';
-    sub.textContent = 'Speak clearly';
-
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    state.recognition = new SR();
-    state.recognition.lang = 'en-IN';
-    state.recognition.continuous = false;
-    state.recognition.interimResults = true;
-
-    state.recognition.onresult = (e) => {
-      const interim = Array.from(e.results).map(r => r[0].transcript).join('');
-      trans.textContent = interim;
-      if (e.results[0].isFinal) {
-        parseVoiceRoute(interim);
-        setTimeout(() => toggleVoiceTravel(), 300);
-      }
-    };
-    state.recognition.onerror = () => {
-      showToast('⚠️', 'Could not hear you. Try again.');
-      toggleVoiceTravel();
-    };
-    state.recognition.start();
-  }
-
-  function parseVoiceRoute(text) {
-    // Simple parser — in real app this calls Nova Sonic via backend
-    const lc = text.toLowerCase();
-    const cities = {
-      'mumbai': 'BOM', 'delhi': 'DEL', 'bangalore': 'BLR', 'bengaluru': 'BLR',
-      'hyderabad': 'HYD', 'chennai': 'MAA', 'kolkata': 'CCU', 'pune': 'PNQ',
-      'goa': 'GOI', 'ahmedabad': 'AMD', 'kochi': 'COK'
-    };
-    const matches = Object.entries(cities).filter(([k]) => lc.includes(k));
-    if (matches.length >= 2) {
-      document.getElementById('travel-from').value = matches[0][1];
-      document.getElementById('travel-to').value   = matches[1][1];
-    }
-    // Date parsing: "this friday", "next monday", etc.
-    const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-    for (const [i, d] of days.entries()) {
-      if (lc.includes(d)) {
-        const today = new Date();
-        const diff = (i - today.getDay() + 7) % 7 || 7;
-        const target = new Date(today);
-        target.setDate(today.getDate() + diff);
-        document.getElementById('travel-date').value = target.toISOString().split('T')[0];
-        break;
-      }
-    }
-    showToast('✓', 'Route parsed from voice');
-  }
-
-  // ── PRODUCT SEARCH ───────────────────────────────────────────────
-  function startProductSearch() {
-    const query = document.getElementById('product-query').value.trim();
-    if (!query && !state.pastedImage) {
-      showToast('⚠️', 'Enter a product name or paste a screenshot');
-      return;
-    }
-
-    resetProductResults();
-    setStatus('connecting', 'Connecting to FareWise backend...');
-
-    // Close any previous WebSocket
-    if (state.wsProducts) { try { state.wsProducts.close(); } catch(e){} }
-
-    const taskId = Date.now();
-    const wsUrl  = `${state.apiUrl.replace('http', 'ws')}/ws/search/${taskId}`;
-
-    try {
-      const ws = new WebSocket(wsUrl);
-      state.wsProducts = ws;
-
-      ws.onopen = () => {
-        setStatus('connected', 'Identifying product...');
-        ws.send(JSON.stringify({
-          mode:      'products',
-          query:     query,
-          image_b64: state.pastedImage || null,
-          cards:     state.selectedCards,
-        }));
-      };
-
-      ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        handleProductMessage(msg);
-      };
-
-      ws.onerror = () => {
-        console.error('[FareWise] Backend unreachable');
-        showBackendError('products');
-      };
-
-      ws.onclose = (e) => {
-        if (e.code !== 1000 && e.code !== 1005) {
-          console.warn('[FareWise] WS closed unexpectedly:', e.code);
-        }
-        state.wsProducts = null;
-      };
-
-    } catch (err) {
-      console.error('[FareWise] WebSocket connection failed:', err);
-      showBackendError('products');
-    }
-  }
-
-  function handleProductMessage(msg) {
-    switch (msg.type) {
-      case 'progress':
-        setStatus('connected', msg.message || 'Working...');
-        break;
-
-      case 'identified':
-        const confPct  = Math.round((msg.confidence || 0.8) * 100);
-        const confLevel = confPct >= 85 ? 'high' : confPct >= 60 ? 'medium' : 'low';
-        showIdentification(msg.product_name, confLevel, confPct);
-        setStatus('connected', 'Searching platforms...');
-        showProductProgress();
-        // Start indeterminate progress bars while agents run
-        document.getElementById('status-amazon').textContent   = 'Searching';
-        document.getElementById('status-flipkart').textContent = 'Searching';
-        break;
-
-      case 'agent_start':
-        if (msg.agent === 'amazon')   document.getElementById('status-amazon').textContent   = 'Searching…';
-        if (msg.agent === 'flipkart') document.getElementById('status-flipkart').textContent = 'Searching…';
-        break;
-
-      case 'agent_done':
-        if (msg.agent === 'amazon')   { document.getElementById('prog-amazon').style.width   = '100%'; document.getElementById('status-amazon').textContent   = `${msg.count} found`; }
-        if (msg.agent === 'flipkart') { document.getElementById('prog-flipkart').style.width = '100%'; document.getElementById('status-flipkart').textContent = `${msg.count} found`; }
-        break;
-
-      case 'results':
-        renderProductResults(msg);
-        break;
-
-      case 'done':
-        setStatus('connected', 'Done');
-        break;
-
-      case 'error':
-        setStatus('error', msg.message || 'Search failed');
-        showToast('⚠️', msg.message || 'Search failed');
-        break;
-    }
-  }
-
-  function renderProductResults(msg) {
-    const winner  = msg.winner  || {};
-    const allResults = msg.all || msg.all_results || [];
-    const PLATFORM_LABELS = { amazon: 'Amazon India', flipkart: 'Flipkart' };
-    const PLATFORM_COLORS = { amazon: 'var(--amazon)', flipkart: 'var(--flipkart)' };
-
-    // Sort: winner first
-    const sorted = [...allResults].sort((a, b) => (a.rank || 99) - (b.rank || 99));
-
-    sorted.forEach((r, i) => {
-      const isWinner = r.platform === winner.platform;
-      const raw      = r.price_raw      || r.price    || 0;
-      const eff      = r.price_effective || raw;
-      const saving   = raw - eff;
-      const discPct  = raw > 0 ? Math.round((saving / raw) * 100) : 0;
-      const label    = PLATFORM_LABELS[r.platform] || r.platform;
-
-      renderProductCard({
-        platform:    label,
-        color:       PLATFORM_COLORS[r.platform] || '#888',
-        price:       eff,
-        base:        raw,
-        card:        r.card_used   || winner.card_used || null,
-        discount:    discPct,
-        discountAmt: saving,
-        delivery:    0,
-        days:        r.delivery_days || 2,
-        url:         r.url          || winner.buy_url || '#',
-        winner:      isWinner,
-        cashback:    r.cashback     || null,
-        seller:      r.seller       || label,
-      }, i);
+    // ── INITIALIZATION ──────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+      loadConfig();
+      checkBackend();
+      setupVoice();
     });
 
-    if (winner.saving_vs_max) {
-      showSavings('products', winner.saving_vs_max);
+    function toggleTheme() {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      document.body.setAttribute('data-theme', state.theme);
+      document.getElementById('theme-toggle').textContent = state.theme === 'dark' ? '🌙' : '☀️';
+      saveConfig();
     }
-    if (msg.reasoning) {
-      showReasoningText('products', msg.reasoning);
+
+    function toggleSettings() {
+      const panel = document.getElementById('settings-panel');
+      panel.classList.toggle('show');
     }
-    setStatus('connected', `Done · ${sorted.length} results`);
-  }
 
-  // ── Backend offline error card ────────────────────────────────────
-  function showBackendError(mode) {
-    const listId = mode === 'travel' ? 'results-travel' : 'results-products';
-    const list   = document.getElementById(listId);
-    const retryFn = mode === 'travel' ? 'startTravelSearch()' : 'startProductSearch()';
-
-    setStatus('error', 'Backend offline');
-
-    const card = document.createElement('div');
-    card.className = 'result-card';
-    card.style.borderLeft = '3px solid var(--red)';
-    card.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0"></div>
-        <div style="font-weight:600;color:var(--red);font-size:13px">Backend offline</div>
-      </div>
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5">
-        Cannot reach <code style="background:rgba(255,95,95,0.12);padding:1px 5px;border-radius:3px">${state.apiUrl}</code>
-        <br>Start the backend: <code style="background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px">uvicorn main:app --reload</code>
-      </div>
-      <button class="btn-view" style="border-color:var(--red);color:var(--red)"
-              onclick="${retryFn}">⟳ Retry</button>
-    `;
-    list.appendChild(card);
-  }
-
-  function showIdentification(name, confidence, pct) {
-    const el = document.getElementById('id-result');
-    const dot = document.getElementById('id-dot');
-    const nameEl = document.getElementById('id-name');
-    const confEl = document.getElementById('id-conf');
-    el.classList.add('show');
-    dot.className = 'id-dot ' + confidence;
-    nameEl.textContent = name;
-    confEl.className = 'id-conf ' + confidence;
-    confEl.textContent = `● ${pct}% confidence`;
-  }
-
-  function showProductProgress() {
-    document.getElementById('progress-products').classList.add('show');
-  }
-
-  function animateProgress(fillId, statusId, duration, onComplete) {
-    const fill   = document.getElementById(fillId);
-    const status = document.getElementById(statusId);
-    status.textContent = 'Searching';
-    let pct = 0;
-    const step = 100 / (duration / 50);
-    const timer = setInterval(() => {
-      pct = Math.min(pct + step + Math.random() * 2, 98);
-      fill.style.width = pct + '%';
-    }, 50);
-    setTimeout(() => {
-      clearInterval(timer);
-      fill.style.width = '100%';
-      status.textContent = 'Done';
-      status.className = 'agent-status done';
-      onComplete?.();
-    }, duration);
-  }
-
-  function renderProductCard(data, delay) {
-    const list = document.getElementById('results-products');
-    const card = document.createElement('div');
-    card.className = 'result-card' + (data.winner ? ' winner' : '');
-    card.style.animationDelay = delay * 0.1 + 's';
-    card.innerHTML = `
-      <div class="card-top">
-        <div class="card-platform">
-          <div class="card-platform-dot" style="background:${data.color}"></div>
-          <div class="card-platform-name">${data.platform}</div>
-        </div>
-        ${data.winner ? '<div class="winner-chip">★ BEST DEAL</div>' : ''}
-      </div>
-      <div class="card-price">₹${data.price.toLocaleString('en-IN')}</div>
-      <div class="card-breakdown">
-        ₹${data.base.toLocaleString('en-IN')} −
-        <span class="card-off">${data.discount}% ${data.card} (−₹${data.discountAmt.toLocaleString('en-IN')})</span>
-        − ₹${data.delivery} delivery
-      </div>
-      <div class="card-meta">
-        <div class="card-meta-item">📦 ${data.days}d delivery</div>
-        <div class="card-meta-item">🏪 ${data.seller}</div>
-        ${data.cashback ? `<div class="card-cashback">⏱ ${data.cashback}</div>` : ''}
-      </div>
-      ${data.winner
-        ? `<button class="btn-buy" onclick="openUrl('${data.url}')">Buy on ${data.platform} →</button>`
-        : `<button class="btn-view" onclick="openUrl('${data.url}')">View on ${data.platform}</button>`
+    function toggleCard(el) {
+      el.classList.toggle('selected');
+      const card = el.getAttribute('data-card');
+      if (el.classList.contains('selected')) {
+        if (!state.cards.includes(card)) state.cards.push(card);
+      } else {
+        state.cards = state.cards.filter(c => c !== card);
       }
-    `;
-    list.appendChild(card);
-  }
-
-  // ── TRAVEL SEARCH ────────────────────────────────────────────────
-  function startTravelSearch() {
-    const from  = document.getElementById('travel-from').value;
-    const to    = document.getElementById('travel-to').value;
-    const date  = document.getElementById('travel-date').value;
-
-    if (!from || !to) { showToast('⚠️', 'Select origin and destination'); return; }
-    if (from === to)  { showToast('⚠️', 'Origin and destination must differ'); return; }
-
-    resetTravelResults();
-    setStatus('connecting', 'Connecting to FareWise backend...');
-    document.getElementById('progress-travel').classList.add('show');
-
-    if (state.wsTravel) { try { state.wsTravel.close(); } catch(e){} }
-
-    const taskId = Date.now();
-    const wsUrl  = `${state.apiUrl.replace('http', 'ws')}/ws/search/${taskId}`;
-
-    try {
-      const ws = new WebSocket(wsUrl);
-      state.wsTravel = ws;
-
-      ws.onopen = () => {
-        setStatus('connected', 'Searching flights...');
-        ws.send(JSON.stringify({
-          mode:  'travel',
-          route: { from, to, date, class: 'economy' },
-          cards: state.selectedCards,
-        }));
-      };
-
-      ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        handleTravelMessage(msg);
-      };
-
-      ws.onerror = () => {
-        console.error('[FareWise] Backend unreachable');
-        showBackendError('travel');
-      };
-
-      ws.onclose = () => { state.wsTravel = null; };
-
-    } catch (err) {
-      console.error('[FareWise] WebSocket connection failed:', err);
-      showBackendError('travel');
     }
-  }
 
-  function handleTravelMessage(msg) {
-    switch (msg.type) {
-      case 'progress':
-        setStatus('connected', msg.message || 'Searching...');
-        break;
+    function saveSettings() {
+      state.apiUrl = document.getElementById('api-url').value;
+      saveConfig();
+      toggleSettings();
+      checkBackend();
+    }
 
-      case 'agent_start':
-        const startMap = { makemytrip: 'status-mmt', goibibo: 'status-goibibo', cleartrip: 'status-cleartrip' };
-        if (startMap[msg.agent]) document.getElementById(startMap[msg.agent]).textContent = 'Searching…';
-        break;
+    function loadConfig() {
+      try {
+        const conf = JSON.parse(localStorage.getItem('fw_v2'));
+        if (conf) {
+          state.theme = conf.theme || 'dark';
+          state.apiUrl = conf.apiUrl || 'http://localhost:8000';
+          state.cards = conf.cards || ['HDFC Regalia', 'SBI SimplyCLICK'];
+        }
+      } catch(e){}
+      
+      document.body.setAttribute('data-theme', state.theme);
+      document.getElementById('theme-toggle').textContent = state.theme === 'dark' ? '🌙' : '☀️';
+      document.getElementById('api-url').value = state.apiUrl;
+      
+      document.querySelectorAll('.card-chip').forEach(el => {
+        if (state.cards.includes(el.getAttribute('data-card'))) {
+          el.classList.add('selected');
+        } else {
+          el.classList.remove('selected');
+        }
+      });
+    }
 
-      case 'agent_done':
-        const doneMap = {
-          makemytrip: ['prog-mmt', 'status-mmt'],
-          goibibo:    ['prog-goibibo', 'status-goibibo'],
-          cleartrip:  ['prog-cleartrip', 'status-cleartrip'],
+    function saveConfig() {
+      localStorage.setItem('fw_v2', JSON.stringify({
+        theme: state.theme,
+        apiUrl: state.apiUrl,
+        cards: state.cards
+      }));
+    }
+
+    // ── STATUS ──────────────────────────────────────────────
+    function updateStatus(dotClass, text) {
+      document.getElementById('status-dot').className = `status-dot ${dotClass}`;
+      document.getElementById('status-text').textContent = text;
+    }
+
+    function checkBackend() {
+      fetch(`${state.apiUrl}/health`)
+        .then(res => res.json())
+        .then(() => updateStatus('ok', `Connected to ${state.apiUrl}`))
+        .catch(() => updateStatus('error', `Cannot reach ${state.apiUrl}`));
+    }
+
+    // ── VOICE INPUT ─────────────────────────────────────────
+    function setupVoice() {
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        state.recognition = new SR();
+        state.recognition.lang = 'en-IN';
+        state.recognition.continuous = false;
+        state.recognition.interimResults = true;
+        
+        state.recognition.onstart = () => {
+          state.voiceActive = true;
+          document.getElementById('mic-btn').classList.add('listening');
+          document.getElementById('route-query').placeholder = "Listening...";
         };
-        if (doneMap[msg.agent]) {
-          document.getElementById(doneMap[msg.agent][0]).style.width = '100%';
-          document.getElementById(doneMap[msg.agent][1]).textContent = `${msg.count} found`;
-        }
-        break;
-
-      case 'results':
-        renderTravelResults(msg);
-        break;
-
-      case 'done':
-        setStatus('connected', 'Done');
-        break;
-
-      case 'error':
-        setStatus('error', msg.message || 'Flight search failed');
-        showToast('⚠️', msg.message || 'Flight search failed');
-        break;
-    }
-  }
-
-  function renderTravelResults(msg) {
-    const winner     = msg.winner  || {};
-    const allResults = msg.all     || msg.all_results || [];
-    const PLATFORM_LABELS = { makemytrip: 'MakeMyTrip', goibibo: 'Goibibo', cleartrip: 'Cleartrip' };
-    const PLATFORM_COLORS = { makemytrip: 'var(--mmt)', goibibo: 'var(--goibibo)', cleartrip: 'var(--cleartrip)' };
-
-    const sorted = [...allResults].sort((a, b) => (a.rank || 99) - (b.rank || 99));
-
-    sorted.forEach((r, i) => {
-      const isWinner = r.platform === winner.platform;
-      const raw      = r.price_raw      || r.price    || 0;
-      const eff      = r.price_effective || raw;
-      const saving   = raw - eff;
-      const discPct  = raw > 0 ? Math.round((saving / raw) * 100) : 0;
-      const fd       = (r.flight_details || winner.flight_details || {});
-      const label    = PLATFORM_LABELS[r.platform] || r.platform;
-
-      renderFlightCard({
-        platform:    label,
-        color:       PLATFORM_COLORS[r.platform] || '#888',
-        price:       eff,
-        base:        raw,
-        card:        r.card_used || winner.card_used || null,
-        discount:    discPct,
-        discountAmt: saving,
-        convFee:     r.convenience_fee || 0,
-        flight:      fd.airline || 'Unknown',
-        dep:         fd.departure || '--',
-        arr:         fd.arrival   || '--',
-        dur:         fd.duration  || '--',
-        url:         r.book_url  || winner.book_url || '#',
-        winner:      isWinner,
-      }, i);
-    });
-
-    if (winner.saving_vs_max) showSavings('travel', winner.saving_vs_max);
-    if (msg.reasoning)        showReasoningText('travel', msg.reasoning);
-    setStatus('connected', `Done · ${sorted.length} results`);
-  }
-
-  function renderFlightCard(data, delay) {
-    const list = document.getElementById('results-travel');
-    const card = document.createElement('div');
-    card.className = 'result-card' + (data.winner ? ' winner' : '');
-    card.style.animationDelay = delay * 0.12 + 's';
-    card.innerHTML = `
-      <div class="card-top">
-        <div class="card-platform">
-          <div class="card-platform-dot" style="background:${data.color}"></div>
-          <div class="card-platform-name">${data.platform}</div>
-        </div>
-        ${data.winner ? '<div class="winner-chip">★ CHEAPEST</div>' : ''}
-      </div>
-      <div class="flight-no-badge">${data.flight}</div>
-      <div class="flight-info">
-        <div class="flight-time">${data.dep}</div>
-        <div class="flight-arrow"><div class="flight-dur">${data.dur}</div></div>
-        <div class="flight-time">${data.arr}</div>
-      </div>
-      <div class="card-price">₹${data.price.toLocaleString('en-IN')}</div>
-      <div class="card-breakdown">
-        ₹${data.base.toLocaleString('en-IN')} base
-        ${data.discount ? `− <span class="card-off">${data.discount}% ${data.card} (−₹${data.discountAmt.toLocaleString('en-IN')})</span>` : ''}
-        ${data.convFee ? `+ ₹${data.convFee} conv. fee` : '+ ₹0 conv. fee'}
-      </div>
-      ${data.winner
-        ? `<button class="btn-buy" onclick="openUrl('${data.url}')">Book on ${data.platform} →</button>`
-        : `<button class="btn-view" onclick="openUrl('${data.url}')">View on ${data.platform}</button>`
+        
+        state.recognition.onresult = (e) => {
+          const text = Array.from(e.results).map(r => r[0].transcript).join('');
+          document.getElementById('route-query').value = text;
+        };
+        
+        state.recognition.onend = () => {
+          state.voiceActive = false;
+          document.getElementById('mic-btn').classList.remove('listening');
+          document.getElementById('route-query').placeholder = "e.g., Mumbai to Delhi this Friday morning";
+        };
+        
+        state.recognition.onerror = () => {
+          state.voiceActive = false;
+          document.getElementById('mic-btn').classList.remove('listening');
+        };
       }
-    `;
-    list.appendChild(card);
-  }
-
-  // ── SHARED UI HELPERS ────────────────────────────────────────────
-  function showSavings(mode, amount, note) {
-    const banner = document.getElementById(`savings-${mode}`);
-    const valEl  = document.getElementById(`savings-value-${mode}`);
-    banner.classList.add('show');
-    // Animate counter
-    let cur = 0;
-    const step = amount / 30;
-    const t = setInterval(() => {
-      cur = Math.min(cur + step, amount);
-      valEl.textContent = '₹' + Math.floor(cur).toLocaleString('en-IN');
-      if (cur >= amount) clearInterval(t);
-    }, 20);
-    if (note && document.getElementById('savings-note-travel')) {
-      document.getElementById('savings-note-travel').textContent = note;
     }
-  }
 
-  function showNovaReasoning(mode) {
-    document.getElementById(`nova-reasoning-${mode}`).classList.add('show');
-  }
+    function toggleVoice() {
+      if (!state.recognition) return alert('Voice not supported in this browser.');
+      if (state.voiceActive) {
+        state.recognition.stop();
+      } else {
+        document.getElementById('route-query').value = '';
+        state.recognition.start();
+      }
+    }
 
-  function showReasoningText(mode, text) {
-    const body = document.getElementById(`reasoning-body-${mode}`);
-    if (body && text) body.textContent = text;
-    showNovaReasoning(mode);
-  }
+    // ── SEARCH LOGIC & WEBSOCKET ────────────────────────────
+    function startSearch() {
+      const query = document.getElementById('route-query').value.trim();
+      if (!query) return;
+      
+      // Reset UI with dual columns for wide viewports
+      document.getElementById('results-container').innerHTML = `
+        <div id="cleartrip-col" class="results-column" data-placeholder="Waiting for Cleartrip..."></div>
+        <div id="ixigo-col" class="results-column" data-placeholder="Waiting for Ixigo..."></div>
+      `;
+      document.getElementById('progress-panel').classList.add('show');
+      document.getElementById('main-spinner').classList.remove('hidden');
+      document.getElementById('progress-main-text').textContent = "Parsing request with Nova Lite...";
+      
+      resetAgentTracker('cleartrip');
+      resetAgentTracker('ixigo');
+      
+      if (state.ws) { try { state.ws.close(); } catch(e){} }
+      
+      const wsUrl = `${state.apiUrl.replace('http', 'ws')}/ws/search/${Date.now()}`;
+      
+      try {
+        state.ws = new WebSocket(wsUrl);
+        updateStatus('busy', 'Connecting...');
+        
+        state.ws.onopen = () => {
+          updateStatus('busy', 'Searching flights...');
+          state.ws.send(JSON.stringify({
+            mode: 'travel',
+            query: query,
+            cards: state.cards
+          }));
+        };
+        
+        state.ws.onmessage = (e) => {
+          const msg = JSON.parse(e.data);
+          handleMessage(msg);
+        };
+        
+        state.ws.onerror = () => {
+          updateStatus('error', 'WebSocket Error');
+          document.getElementById('progress-main-text').textContent = 'Backend connection failed.';
+          document.getElementById('main-spinner').classList.add('hidden');
+        };
+        
+        state.ws.onclose = () => { updateStatus('ok', 'Ready'); };
+      } catch (e) {
+        console.error(e);
+      }
+    }
 
-  function toggleReasoning(mode) {
-    const body  = document.getElementById(`reasoning-body-${mode}`);
-    const arrow = document.getElementById(`arrow-${mode}`);
-    const open  = body.classList.toggle('open');
-    arrow.classList.toggle('open', open);
-  }
+    // Timer state for each agent
+    const agentTimers = {};
+    const agentIntervals = {};
 
-  function editQuery() {
-    document.getElementById('id-result').classList.remove('show');
-    document.getElementById('product-query').focus();
-  }
+    function startAgentTimer(agent) {
+      agentTimers[agent] = Date.now();
+      if (agentIntervals[agent]) clearInterval(agentIntervals[agent]);
+      
+      const timerEl = document.getElementById(`timer-${agent}`);
+      if (timerEl) timerEl.textContent = '00:00';
+      
+      agentIntervals[agent] = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - agentTimers[agent]) / 1000);
+        const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const secs = String(elapsed % 60).padStart(2, '0');
+        if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
 
-  function resetProductResults() {
-    document.getElementById('id-result').classList.remove('show');
-    document.getElementById('progress-products').classList.remove('show');
-    document.getElementById('savings-products').classList.remove('show');
-    document.getElementById('nova-reasoning-products').classList.remove('show');
-    document.getElementById('results-products').innerHTML = '';
-    document.getElementById('reasoning-body-products').classList.remove('open');
-    document.getElementById('prog-amazon').style.width = '0%';
-    document.getElementById('prog-flipkart').style.width = '0%';
-    document.getElementById('status-amazon').textContent = '–';
-    document.getElementById('status-amazon').className = 'agent-status';
-    document.getElementById('status-flipkart').textContent = '–';
-    document.getElementById('status-flipkart').className = 'agent-status';
-  }
+    function stopAgentTimer(agent) {
+      if (agentIntervals[agent]) {
+        clearInterval(agentIntervals[agent]);
+        delete agentIntervals[agent];
+      }
+    }
 
-  function resetTravelResults() {
-    document.getElementById('progress-travel').classList.remove('show');
-    document.getElementById('savings-travel').classList.remove('show');
-    document.getElementById('nova-reasoning-travel').classList.remove('show');
-    document.getElementById('results-travel').innerHTML = '';
-    ['prog-mmt','prog-goibibo','prog-cleartrip'].forEach(id => {
-      document.getElementById(id).style.width = '0%';
-    });
-    ['status-mmt','status-goibibo','status-cleartrip'].forEach(id => {
-      const el = document.getElementById(id);
-      el.textContent = '–';
-      el.className = 'agent-status';
-    });
-  }
+    function resetAgentTracker(agent) {
+      let tracker = document.getElementById(`tracker-${agent}`);
+      if (!tracker) return; // skip if agent not in UI initially
+      document.getElementById(`count-${agent}`).textContent = 'Pending';
+      document.getElementById(`count-${agent}`).style.color = 'var(--t3)';
+      document.getElementById(`phase1-${agent}`).className = 'phase';
+      document.getElementById(`phase1-${agent}`).innerHTML = '<span class="phase-icon">○</span> Phase 1: Search & Extract';
+      document.getElementById(`phase2-${agent}`).className = 'phase';
+      document.getElementById(`phase2-${agent}`).innerHTML = '<span class="phase-icon">○</span> Phase 2: Analyze Offers';
+      document.getElementById(`prog-${agent}`).style.width = '0%';
+      stopAgentTimer(agent);
+      let timerEl = document.getElementById(`timer-${agent}`);
+      if (!timerEl) {
+        document.getElementById(`count-${agent}`).insertAdjacentHTML('beforebegin', `<span id="timer-${agent}" style="font-size:10px;color:var(--t3);margin-right:8px;font-family:monospace">00:00</span>`);
+      } else {
+        timerEl.textContent = '00:00';
+      }
+    }
+    
+    function setPhaseActive(agent, phaseNum) {
+      if (phaseNum === 1) {
+        startAgentTimer(agent);
+        document.getElementById(`count-${agent}`).textContent = 'Extracting...';
+        document.getElementById(`count-${agent}`).style.color = 'var(--blue)';
+        document.getElementById(`phase1-${agent}`).className = 'phase active';
+        document.getElementById(`phase1-${agent}`).innerHTML = '<span class="phase-icon spinner" style="width:10px;height:10px;border-width:1.5px;display:inline-block"></span> Phase 1: Search & Extract';
+        document.getElementById(`prog-${agent}`).style.width = '30%';
+      } else if (phaseNum === 2) {
+        document.getElementById(`phase1-${agent}`).className = 'phase done';
+        document.getElementById(`phase1-${agent}`).innerHTML = '<span class="phase-icon">✓</span> Phase 1: Search & Extract';
+        document.getElementById(`phase2-${agent}`).className = 'phase active';
+        document.getElementById(`phase2-${agent}`).innerHTML = '<span class="phase-icon spinner" style="width:10px;height:10px;border-width:1.5px;display:inline-block"></span> Phase 2: Analyze Offers';
+        document.getElementById(`count-${agent}`).textContent = 'Analyzing...';
+        document.getElementById(`prog-${agent}`).style.width = '70%';
+      }
+    }
+    
+    function setAgentDone(agent, count) {
+      stopAgentTimer(agent);
+      document.getElementById(`phase1-${agent}`).className = 'phase done';
+      document.getElementById(`phase1-${agent}`).innerHTML = '<span class="phase-icon">✓</span> Phase 1: Search & Extract';
+      document.getElementById(`phase2-${agent}`).className = 'phase done';
+      document.getElementById(`phase2-${agent}`).innerHTML = '<span class="phase-icon">✓</span> Phase 2: Analyze Offers';
+      document.getElementById(`count-${agent}`).textContent = `${count} found`;
+      document.getElementById(`count-${agent}`).style.color = 'var(--green)';
+      document.getElementById(`prog-${agent}`).style.width = '100%';
+    }
 
-  // ── STATUS BAR ───────────────────────────────────────────────────
-  function setStatus(state, text) {
-    const dot = document.getElementById('status-dot');
-    const txt = document.getElementById('status-text');
-    dot.className = 'status-dot ' + (state === 'connecting' ? 'connecting' : state === 'error' ? 'error' : '');
-    txt.textContent = text;
-  }
+    function handleMessage(msg) {
+      if (msg.type === 'progress') {
+        document.getElementById('progress-main-text').textContent = msg.message;
+      } 
+      else if (msg.type === 'agent_phase') {
+        setPhaseActive(msg.agent, msg.phase);
+        if (msg.interim_flights && msg.interim_flights.length > 0) {
+          renderInterimResults(msg.interim_flights, msg.agent);
+        }
+      }
+      else if (msg.type === 'agent_start') {
+        setPhaseActive(msg.agent, 1);
+      }
+      else if (msg.type === 'agent_done') {
+        setAgentDone(msg.agent, msg.count || 0);
+      }
+      else if (msg.type === 'results') {
+        document.getElementById('progress-main-text').textContent = "Done!";
+        document.getElementById('main-spinner').classList.add('hidden');
+        renderResults(msg);
+        setTimeout(() => document.getElementById('progress-panel').classList.remove('show'), 2000);
+      }
+      else if (msg.type === 'offer_extracted') {
+        console.log("Offer extracted for flight:", msg.offer.airline, msg.offer.flight_number);
+        updateInterimCard(msg.agent, msg.offer);
+      }
+      else if (msg.type === 'error') {
+        document.getElementById('progress-main-text').textContent = `Error: ${msg.message}`;
+        document.getElementById('main-spinner').classList.add('hidden');
+        updateStatus('error', 'Error');
+      }
+      else if (msg.type === 'raw_data') {
+        renderRawData(msg.agent, msg.data);
+      }
+      else if (msg.type === 'plan') {
+        renderPlanInfo(msg);
+      }
+    }
 
-  // ── TOAST ────────────────────────────────────────────────────────
-  let toastTimer = null;
-  function showToast(icon, msg) {
-    const el = document.getElementById('toast');
-    document.getElementById('toast-icon').textContent = icon;
-    document.getElementById('toast-msg').textContent  = msg;
-    el.classList.add('show');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
-  }
+    function updateInterimCard(agent, offer) {
+      const container = document.getElementById(`${agent}-col`);
+      if (!container) return;
+      
+      const cards = container.querySelectorAll('.safe-interim');
+      for (const card of cards) {
+        const airEl = card.querySelector('.airline-name');
+        const fnoEl = card.querySelector('.flight-no');
+        if (!airEl || !fnoEl) continue;
 
-  // ── OPEN URL ─────────────────────────────────────────────────────
-  function openUrl(url) {
-    try { chrome.tabs.create({ url }); } catch(e) { window.open(url, '_blank'); }
-  }
+        const air = airEl.textContent;
+        const fno = fnoEl.textContent;
+        
+        if (air === offer.airline && fno === offer.flight_number) {
+          // 1. Remove the "Finding Coupons" badge if it exists
+          const badge = card.querySelector('.best-badge');
+          if (badge) badge.remove();
+          
+          // 2. Update price if it changed (best_price_after_coupon)
+          const rawP = offer.original_price || offer.price || 0;
+          const effP = offer.best_price_after_coupon || (offer.fare_details ? offer.fare_details.total : null) || rawP;
+          
+          const pMain = card.querySelector('.price-main');
+          if (pMain) {
+            pMain.textContent = `₹${effP.toLocaleString('en-IN')}`;
+            if (effP < rawP) {
+              pMain.style.color = 'var(--green)';
+              if (!card.querySelector('.price-orig')) {
+                const pOrig = document.createElement('div');
+                pOrig.className = 'price-orig';
+                pOrig.style.cssText = "text-decoration: line-through; color: var(--t3); font-size: 12px; font-weight: 400;";
+                pOrig.textContent = `₹${rawP.toLocaleString('en-IN')}`;
+                pMain.parentNode.appendChild(pOrig);
+              }
+            }
+          }
+          
+          // 3. Add breakdown if present
+          const fd = offer.fare_details || offer.fare_breakdown;
+          if (fd) {
+            const base = fd.base_fare || 0;
+            const tax = fd.taxes || 0;
+            const fee = fd.convenience_fee || 0;
+            
+            // Remove placeholder if it exists
+            const placeholder = card.querySelector('.breakdown-placeholder');
+            if (placeholder) placeholder.remove();
 
-  // ── WebSocket handlers are wired in startProductSearch() and startTravelSearch() above.
-  // When the backend is offline, showBackendError() renders an error card with a Retry button.
-  // For offline demos, load frontend_chrome_extension/demo/demo_data.js separately.
+            let detDiv = card.querySelector('.offer-details');
+            if (!detDiv) {
+              detDiv = document.createElement('div');
+              detDiv.className = 'offer-details';
+              const provRow = card.querySelector('.provider-row');
+              card.insertBefore(detDiv, provRow);
+            }
+            detDiv.innerHTML = `
+              <div style="font-size:13px; color:var(--t2); display:flex; gap:12px; margin-top:10px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1.5px solid var(--blue-border); font-weight:500;">
+                <span>Base: ₹${base}</span>
+                <span>Taxes: ₹${tax}</span>
+                <span>Conv. Fee: ₹${fee}</span>
+              </div>
+            `;
+          }
+          
+          // Make the card look "final" by restoring opacity
+          card.style.opacity = '1';
+          card.style.borderStyle = 'solid';
+          card.style.borderColor = 'var(--blue-border)';
+          
+          break; 
+        }
+      }
+    }
+
+    function renderPlanInfo(planMsg) {
+      const container = document.getElementById('progress-panel');
+      const route = planMsg.route || {};
+      const filters = planMsg.filters || {};
+      
+      // Look for a specific container for the plan info, or insert it before the trackers
+      let planDiv = document.getElementById('plan-info-block');
+      if (!planDiv) {
+        planDiv = document.createElement('div');
+        planDiv.id = 'plan-info-block';
+        planDiv.style.cssText = 'background: rgba(99,102,241,0.05); border: 1px solid var(--blue-border); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 11px;';
+        
+        // Find where to insert it (just after the main "Searching..." header)
+        const header = container.querySelector('.progress-header');
+        if (header && header.nextSibling) {
+          container.insertBefore(planDiv, header.nextSibling);
+        } else {
+          container.appendChild(planDiv);
+        }
+      }
+      
+      const filterLabels = Object.entries(filters).map(([k,v]) => `<span style="background:var(--elevated); padding:2px 6px; border-radius:4px; margin-right:4px;">${k}: ${v}</span>`).join('');
+      
+      planDiv.innerHTML = `
+        <div style="font-weight: 600; color: var(--blue); margin-bottom: 8px; font-family: 'Outfit', sans-serif;">🤖 Nova Lite Extraction</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+          <div><span style="color:var(--t3)">From:</span> <b>${route.from || 'Any'}</b></div>
+          <div><span style="color:var(--t3)">To:</span> <b>${route.to || 'Any'}</b></div>
+          <div><span style="color:var(--t3)">Date:</span> <b>${route.date || 'Any'}</b></div>
+          <div><span style="color:var(--t3)">Class:</span> <b style="text-transform:capitalize">${route.class || 'Economy'}</b></div>
+        </div>
+        ${filterLabels ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--blue-glow);"><span style="color:var(--t3); margin-right: 4px;">Filters:</span> ${filterLabels}</div>` : ''}
+      `;
+    }
+
+    function renderRawData(agent, data) {
+      if (!data || data.length === 0) return;
+      const count = Math.min(data.length, 3);
+      const container = document.getElementById(`${agent}-col`) || document.getElementById('results-container');
+      const jsonStr = JSON.stringify(data.slice(0, count), null, 2);
+      
+      const rawHtml = `
+        <div class="result-card" style="margin-top: 24px; border: 1px solid var(--elevated); background: var(--surface);">
+          <div style="font-family: 'Outfit', sans-serif; font-size: 14px; font-weight: 600; color: var(--t2); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <span><span style="color:var(--blue)">{}</span> Raw Phase 1 JSON Data (${agent})</span>
+          </div>
+          <div style="font-size: 11px; color: var(--t3); margin-bottom: 12px;">Top ${count} flight${count > 1 ? 's' : ''} extracted directly from the webpage before reasoning:</div>
+          <pre style="background: var(--bg); padding: 12px; border-radius: 8px; overflow-x: auto; font-family: monospace; font-size: 10px; color: var(--t2); border: 1px solid var(--overlay); max-height: 200px; overflow-y: auto;">${jsonStr}</pre>
+        </div>
+      `;
+      container.innerHTML += rawHtml;
+    }
+
+    function renderInterimResults(flights, agent) {
+      const container = document.getElementById(`${agent}-col`);
+      if (!container) return;
+      
+      const PLATFORMS = {
+        'ixigo': { name: 'Ixigo', color: 'var(--ixigo)' },
+        'cleartrip': { name: 'Cleartrip', color: 'var(--cleartrip)' },
+        'makemytrip': { name: 'MakeMyTrip', color: '#dc2626' }
+      };
+      
+      const pInfo = PLATFORMS[agent] || { name: agent, color: 'gray' };
+      
+      container.innerHTML = `<div style="font-weight:700; color:${pInfo.color}; margin-bottom:8px; font-size:14px; text-transform:uppercase; letter-spacing:0.05em;">${pInfo.name}</div>`;
+      
+      flights.forEach((flight, index) => {
+        const rawP = flight.price || 0;
+        const isSearchingCoupons = index < 2;
+        
+        // Show "Finding Coupons" for top 2, others are just items
+        const badgeHtml = isSearchingCoupons 
+          ? `<div class="best-badge" style="background:var(--elevated); color:var(--t2); border: 1px dashed var(--blue-glow); font-weight:600; padding:6px 12px; font-size:11px;">⏳ Finding Coupons...</div>`
+          : '';
+          
+        const fd = (flight.offers && flight.offers.fare_details) || flight.fare_details || flight.fare_breakdown;
+        let breakdownHtml = `
+          <div class="breakdown-placeholder" style="font-size:12px; color:var(--t3); display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1px dashed var(--elevated); align-items:center;">
+            <div class="spinner" style="width:12px; height:12px; border-width:1.5px;"></div>
+            <span>Fetching fare breakdown...</span>
+          </div>
+        `;
+        
+        if (fd) {
+            breakdownHtml = `
+              <div style="font-size:13px; color:var(--t2); display:flex; gap:12px; margin-top:10px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1.5px solid var(--elevated); font-weight:500;">
+                <span>Base: ₹${fd.base_fare}</span>
+                <span>Taxes: ₹${fd.taxes}</span>
+                <span>Conv. Fee: ₹${fd.convenience_fee || 0}</span>
+              </div>
+            `;
+        }
+
+        const cardHtml = `
+          <div class="result-card safe-interim" style="opacity: ${isSearchingCoupons ? '0.95' : '0.6'}; margin-bottom: 12px;">
+            ${badgeHtml}
+            
+            <div class="flight-header">
+              <div class="airline-info">
+                <div class="airline-logo">✈️</div>
+                <div>
+                  <div class="airline-name">${flight.airline || 'Airline'}</div>
+                  <div class="flight-no">${flight.flight_number || ''}</div>
+                </div>
+              </div>
+              <div class="price-block" style="text-align: right;">
+                <div class="price-main" style="font-size: 20px; font-weight: 800;">₹${rawP.toLocaleString('en-IN')}</div>
+              </div>
+            </div>
+            
+            <div class="route-visual">
+              <div class="time-node">
+                <div class="time">${flight.departure || '00:00'}</div>
+              </div>
+              <div class="duration-line">
+                <div class="duration-text">${flight.duration || '2h'}</div>
+                <div class="line"></div>
+              </div>
+              <div class="time-node end">
+                <div class="time">${flight.arrival || '00:00'}</div>
+              </div>
+            </div>
+
+            ${breakdownHtml ? `<div class="offer-details">${breakdownHtml}</div>` : ''}
+            
+            <div class="provider-row">
+              <div class="provider-badge" style="color: ${pInfo.color}; background: color-mix(in srgb, ${pInfo.color}, transparent 85%); padding: 4px 10px; border-radius: 20px; font-weight: 700; border: 1.5px solid color-mix(in srgb, ${pInfo.color}, transparent 60%); display:flex; align-items:center; gap:6px; font-size: 11px;">
+                <div class="dot" style="background: ${pInfo.color}; width: 6px; height: 6px; border-radius: 50%;"></div>
+                via ${pInfo.name}
+              </div>
+            </div>
+          </div>
+        `;
+        container.innerHTML += cardHtml;
+      });
+    }
+
+    function renderResults(msg) {
+      const container = document.getElementById('results-container');
+      
+      // Remove any interim mock cards before rendering the final ones
+      const interims = document.querySelectorAll('.safe-interim');
+      interims.forEach(el => el.remove());
+      
+      // Clear placeholders so the columns don't look empty above the raw data
+      const colIxigo = document.getElementById('ixigo-col');
+      const colClear = document.getElementById('cleartrip-col');
+      if (colIxigo) colIxigo.removeAttribute('data-placeholder');
+      if (colClear) colClear.removeAttribute('data-placeholder');
+      
+      // Delete placeholder arrays
+      const winner = msg.winner;
+      const all = msg.all || [];
+      const withCoupons = msg.with_coupons || [];
+      const withoutCoupons = msg.without_coupons || [];
+      
+      const PLATFORMS = {
+        'ixigo': { name: 'Ixigo', color: 'var(--ixigo)' },
+        'cleartrip': { name: 'Cleartrip', color: 'var(--cleartrip)' },
+        'makemytrip': { name: 'MakeMyTrip', color: '#dc2626' } // Fallback
+      };
+      
+      if (all.length === 0) {
+        if (colIxigo) colIxigo.innerHTML += '<div style="text-align:center;padding:20px;color:var(--t3)">No flights found.</div>';
+        if (colClear) colClear.innerHTML += '<div style="text-align:center;padding:20px;color:var(--t3)">No flights found.</div>';
+        return;
+      }
+      
+      const renderCard = (flight, isRaw, badgeHtml, isWinnerOverride) => {
+        const pInfo = PLATFORMS[flight.platform] || { name: flight.platform, color: 'gray' };
+        
+        let breakdownHtml = '';
+        const fd = (flight.offers && flight.offers.fare_details) || flight.fare_details || flight.fare_breakdown;
+        if (fd) {
+            breakdownHtml = `
+              <div style="font-size:13px; color:var(--t2); display:flex; gap:12px; margin-top:10px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1.5px solid var(--elevated); font-weight:500;">
+                <span>Base: ₹${fd.base_fare}</span>
+                <span>Taxes: ₹${fd.taxes}</span>
+                <span>Conv. Fee: ₹${fd.convenience_fee || 0}</span>
+              </div>
+            `;
+        } else if (isRaw && flight.price) {
+            // Secondary flights only have the total price from Phase 1 extraction —
+            // no booking-page offer data was fetched. Show a fallback total row so
+            // the card is not left blank in the breakdown area.
+            breakdownHtml = `
+              <div style="font-size:13px; color:var(--t2); display:flex; gap:12px; margin-top:8px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1.5px solid var(--elevated); font-weight:500;">
+                <span>Total: ₹${(flight.price || 0).toLocaleString('en-IN')}</span>
+                <span style="color:var(--t3); font-size:11px; align-self:center;">(breakdown unavailable)</span>
+              </div>
+            `;
+        }
+
+        let offersHtml = '';
+        if (flight.offers && flight.offers.coupons && flight.offers.coupons.length > 0) {
+          const bestCoupon = flight.offers.coupons.reduce((max, c) => c.discount > max.discount ? c : max, flight.offers.coupons[0]);
+          const discountAmt = bestCoupon.discount || 0;
+          
+          offersHtml += `
+            <div class="offer-details">
+              <div class="offer-row">
+                <span class="offer-tag">🎟️ ${bestCoupon.code || 'DEAL'}</span>
+                <span style="font-weight:600; color:var(--green)">Saved ₹${discountAmt}</span>
+              </div>
+              ${breakdownHtml}
+            </div>
+          `;
+        } else if (isRaw) {
+          offersHtml += `
+            <div class="offer-details" style="background:var(--bg2); border:1px dashed var(--bg3); padding:8px 12px; border-radius: 8px;">
+              <div class="offer-row" style="color:var(--t3); font-size:12px; font-weight:500;">
+                <span>ℹ️ Secondary flight. Raw data only.</span>
+              </div>
+              ${breakdownHtml}
+            </div>
+          `;
+        } else {
+            // No coupons but analyzed, or analyzed and found nothing
+            offersHtml += `
+              <div class="offer-details">
+                ${breakdownHtml}
+              </div>
+            `;
+        }
+        
+        const isWinner = isWinnerOverride || (badgeHtml && badgeHtml.includes('Cheapest'));
+        
+        if (isWinner && (msg.reasoning_user || msg.reasoning)) {
+          const friendReasoning = msg.reasoning_friend ? `
+            <div class="offer-row" style="color:var(--gold); margin-top: 8px;">
+              <span>💡 <b>Nova Tip:</b> ${msg.reasoning_friend}</span>
+            </div>
+          ` : '';
+          
+          offersHtml += `
+            <div class="offer-details" style="background: rgba(99,102,241,0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+              <div class="offer-row" style="color:var(--t2)">
+                <span>🤖 <b>Nova Note:</b> ${msg.reasoning_user || msg.reasoning}</span>
+              </div>
+              ${friendReasoning}
+            </div>
+          `;
+        }
+        
+        const rawP = flight.price || 0;
+        const offerBest = flight.offers ? flight.offers.best_price_after_coupon : null;
+        let effP = offerBest !== null && offerBest !== undefined ? offerBest : 
+                   (flight.price_effective ? flight.price_effective : rawP);
+        
+        // Ensure effP is a number and fix any logic where it might be rawP despite having a coupon
+        if (offerBest !== null && offerBest !== undefined && Number(offerBest) < rawP) {
+            effP = Number(offerBest);
+        }
+
+        const cardHtml = `
+          <div class="result-card ${isWinner ? 'winner' : ''}" style="${isRaw ? 'opacity:0.85;' : ''}">
+            ${badgeHtml || ''}
+            
+            <div class="flight-header">
+              <div class="airline-info">
+                <div class="airline-logo">✈️</div>
+                <div>
+                  <div class="airline-name">${flight.airline || 'Airline'}</div>
+                  <div class="flight-no">${flight.flight_number || ''}</div>
+                </div>
+              </div>
+              <div class="price-block" style="text-align: right;">
+                <div class="price-main" style="color: ${effP < rawP ? 'var(--green)' : 'var(--t1)'}; font-size: 20px; font-weight: 800;">₹${effP.toLocaleString('en-IN')}</div>
+                ${effP < rawP ? `<div class="price-orig" style="text-decoration: line-through; color: var(--t3); font-size: 12px;">₹${rawP.toLocaleString('en-IN')}</div>` : ''}
+              </div>
+            </div>
+            
+            <div class="route-visual">
+              <div class="time-node">
+                <div class="time">${flight.departure || '00:00'}</div>
+              </div>
+              <div class="duration-line">
+                <div class="duration-text">${flight.duration || '2h'}</div>
+                <div class="line"></div>
+              </div>
+              <div class="time-node end">
+                <div class="time">${flight.arrival || '00:00'}</div>
+              </div>
+            </div>
+            
+            ${offersHtml}
+            
+            <div class="provider-row">
+              <div class="provider-badge" style="color: ${pInfo.color}; background: color-mix(in srgb, ${pInfo.color}, transparent 85%); padding: 4px 10px; border-radius: 20px; font-weight: 700; border: 1.5px solid color-mix(in srgb, ${pInfo.color}, transparent 60%); display:flex; align-items:center; gap:6px; font-size: 11px;">
+                <div class="dot" style="background: ${pInfo.color}; width: 6px; height: 6px; border-radius: 50%;"></div>
+                via ${pInfo.name}
+              </div>
+              <a href="${(flight.offers && flight.offers.booking_url) || flight.book_url || '#'}" 
+                 target="_blank" class="btn-book">
+                ${isWinner ? 'Book Now →' : 'View →'}
+              </a>
+            </div>
+          </div>
+        `;
+        
+        const colContainer = document.getElementById(`${flight.platform}-col`) || container;
+        colContainer.innerHTML += cardHtml;
+      };
+
+      if (withCoupons.length > 0) {
+          withCoupons.forEach((flight, idx) => {
+              let badgeHtml = '';
+              let isWinnerClass = false;
+              
+              if (idx === 0) {
+                  badgeHtml = '<div class="best-badge" style="background:var(--green); color:white; font-weight:700;">✨ Cheapest Option</div>';
+                  isWinnerClass = true; // Use winner class styling for top layout
+              } else if (idx === 1) {
+                  badgeHtml = '<div class="best-badge" style="background:#e0e7ff; color:#3730a3; border:1px solid #c7d2fe; top:-12px; font-weight:700;">🥈 Runner Up</div>';
+              }
+              
+              // We inject a fake isWinner true/false parameter for the render function to add the nice padding
+              renderCard(flight, false, badgeHtml, isWinnerClass);
+          });
+      } else {
+          // Fallback if structured data is missing
+          const sorted = [...all].sort((a,b) => (a.rank || 99) - (b.rank || 99));
+          sorted.forEach((flight, idx) => {
+             const isWinner = winner && flight.platform === winner.platform && flight.flight_number === winner.flight_number;
+             const badgeHtml = isWinner ? '<div class="best-badge" style="background:var(--green); color:white; font-weight:700;">✨ Cheapest Option</div>' : '';
+             renderCard(flight, false, badgeHtml, isWinner);
+          });
+      }
+
+      if (withoutCoupons.length > 0) {
+          withoutCoupons.forEach((flight) => {
+              renderCard(flight, true, '');
+          });
+      }
+    }
   </script>
 </body>
 </html>
