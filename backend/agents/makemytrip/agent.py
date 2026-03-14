@@ -629,10 +629,11 @@ class MakeMyTripAgent:
                 nova.page.wait_for_load_state("load")   # about:blank — returns immediately
 
                 # First real HTTP connection to makemytrip.com. If Akamai rejects this with
-                # ERR_HTTP2_PROTOCOL_ERROR, the exception propagates to our retry block.
-                # The --disable-http2 browser flag should prevent this by downgrading to HTTP/1.1.
+                # ERR_HTTP2_PROTOCOL_ERROR or stalls the response (tarpit), the exception
+                # propagates to our retry block. timeout=60000 gives extra headroom for
+                # legitimately slow loads without tying up the process indefinitely.
                 log.debug("MMT: navigating to homepage (%s)", homepage)
-                nova.page.goto(homepage)
+                nova.page.goto(homepage, timeout=60000)
                 nova.page.wait_for_load_state("load")
 
                 # ── Akamai _abck warm-up ──────────────────────────────────────────────────
@@ -935,6 +936,10 @@ class MakeMyTripAgent:
                 or "ERR_HTTP2" in str(e)
                 or "ERR_CONNECTION" in str(e)
                 or "net::" in str(e)
+                # Timeout on goto(homepage) = Akamai tarpit (accepts TCP, stalls response).
+                # "navigating to" is present in Playwright's goto() timeout message and
+                # distinguishes this from timeouts during later extraction steps.
+                or ("Timeout" in str(e) and "navigating to" in str(e))
             )
             if _is_startup_err and _startup_attempt < _startup_retries:
                 # Use longer backoffs than 5/10s: Akamai IP blocks typically persist
