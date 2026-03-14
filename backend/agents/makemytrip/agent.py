@@ -30,12 +30,6 @@ log = get_logger(__name__)
 with open(_AGENT_DIR / "config.yaml", encoding="utf-8") as _f:
     _CONFIG = yaml.safe_load(_f)
 
-# Force HTTP/1.1 for all Chromium connections. Akamai can send HTTP/2
-# RST_STREAM / GOAWAY for bot-fingerprinted sessions; --disable-http2 tells
-# Chromium to advertise only "http/1.1" in TLS ALPN, so the HTTP/2 rejection
-# path is never reached. setdefault preserves any user-supplied override.
-os.environ.setdefault("NOVA_ACT_BROWSER_ARGS", "--disable-http2")
-
 
 def _sub(s: str, **kwargs: str) -> str:
     for k, v in kwargs.items():
