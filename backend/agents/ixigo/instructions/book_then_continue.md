@@ -1,6 +1,6 @@
 Use minimal steps: reach the fare / booking page for the selected flight and stop.
 
-If a **"Price Lock" popup**, **login prompt**, **"ixigo money" popup**, or any promotional banner is blocking the page, dismiss it first (click "Okay, Got it!", X, or "Close").
+**PRIORITY 1:** Click any button containing "Okay" or "Close" as soon as it appears (within ~500ms) to clear the overlay. If a **"Price Lock" popup**, **login prompt**, **"ixigo money" popup**, or any promotional banner is blocking the page, dismiss it first (click "Okay, Got it!", X, or "Close").
 
 Find the flight card for {{airline}} flight {{flight_number}} priced at approximately ₹{{price}}.
 Click that card's `Book` button only.

@@ -151,7 +151,7 @@ def _normalize_coupons(coupon_list: list[dict]) -> list[dict]:
 
 
 def _backfill_booking_urls(flights: list[dict], offers_analysis: list[dict]) -> None:
-    """Set booking_url on each flight that has a matching offer (by airline + flight_number)."""
+    """Set booking_url and book_url on each flight that has a matching offer (by airline + flight_number)."""
     key_to_url: dict[tuple[str, str], str] = {}
     for o in offers_analysis:
         url = o.get("booking_url")
@@ -160,7 +160,42 @@ def _backfill_booking_urls(flights: list[dict], offers_analysis: list[dict]) -> 
     for f in flights:
         k = (str(f.get("airline", "")).strip(), str(f.get("flight_number", "")).strip())
         if k in key_to_url:
-            f["booking_url"] = key_to_url[k]
+            url = key_to_url[k]
+            f["booking_url"] = url
+            f["book_url"] = url  # normalizer reads book_url
+
+
+def _build_filtered_with_offers(
+    raw_flights: list[dict],
+    offers_analysis: list[dict],
+    filters: dict | None,
+) -> list[dict]:
+    """
+    Build app-ready list: all filtered flights, with optional offer data for the first N.
+
+    Each item has canonical flight fields (platform, airline, flight_number, departure,
+    arrival, duration, stops, price, book_url, from_city, to_city, date, travel_class).
+    For the first len(offers_analysis) items we add an "offers" object with
+    booking_url, fare_details, coupons, best_price_after_coupon; for the rest offers is null.
+    """
+    normalizer = FlightNormalizer()
+    filtered = normalizer.normalize(raw_flights, filters=filters or {})
+    n = len(offers_analysis)
+    out: list[dict] = []
+    for i, flight in enumerate(filtered):
+        item = dict(flight)
+        if i < n:
+            o = offers_analysis[i]
+            item["offers"] = {
+                "booking_url": o.get("booking_url"),
+                "fare_details": o.get("fare_details") or {},
+                "coupons": o.get("coupons") or [],
+                "best_price_after_coupon": o.get("best_price_after_coupon"),
+            }
+        else:
+            item["offers"] = None
+        out.append(item)
+    return out
 
 
 def _apply_stealth(nova) -> None:
@@ -468,6 +503,9 @@ class IxigoAgent:
 
                 _apply_stealth(nova)
                 _wait_for_results(nova, url)
+                # Skeleton prevention: brief dwell so results list can hydrate before extraction scroll
+                sleep(3)
+                log.debug("Ixigo: post-wait dwell (3s) for results hydration")
 
                 extraction_cfg = _CONFIG["steps"]["extraction"]
                 extracted = nova.act(
@@ -514,10 +552,16 @@ class IxigoAgent:
                         offers_analysis = self._run_offer_loop(nova, targets, url)
                         _backfill_booking_urls(results, offers_analysis)
                         telemetry = {"search_url": url, "timings_ms": {"total_ms": _elapsed_ms(overall_start)}}
-                        return {"telemetry": telemetry, "flights": results, "offers_analysis": offers_analysis}
+                        filtered = _build_filtered_with_offers(results, offers_analysis, filters)
+                        return {
+                            "telemetry": telemetry,
+                            "flights": results,
+                            "filtered": filtered,
+                            "offers_analysis": offers_analysis,
+                        }
                 if fetch_offers and not results:
                     telemetry = {"search_url": url, "timings_ms": {"total_ms": _elapsed_ms(overall_start)}}
-                    return {"telemetry": telemetry, "flights": [], "offers_analysis": []}
+                    return {"telemetry": telemetry, "flights": [], "filtered": [], "offers_analysis": []}
 
             # After closing the extraction session: run P3 in parallel if requested
             if pending_parallel is not None:
@@ -525,7 +569,13 @@ class IxigoAgent:
                 offers_analysis = self._run_offer_loop_parallel(targets, offer_url)
                 _backfill_booking_urls(results, offers_analysis)
                 telemetry = {"search_url": url, "timings_ms": {"total_ms": _elapsed_ms(overall_start)}}
-                return {"telemetry": telemetry, "flights": results, "offers_analysis": offers_analysis}
+                filtered = _build_filtered_with_offers(results, offers_analysis, filters)
+                return {
+                    "telemetry": telemetry,
+                    "flights": results,
+                    "filtered": filtered,
+                    "offers_analysis": offers_analysis,
+                }
 
             return results
         except Exception as e:

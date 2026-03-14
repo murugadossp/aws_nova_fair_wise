@@ -592,6 +592,34 @@ class CleartripAgent:
         return result
 
     @staticmethod
+    def _build_filtered_with_offers(
+        results: list[dict],
+        filters: dict | None,
+        offers_analysis: list[dict],
+    ) -> list[dict]:
+        """Build app-ready list per backend/docs/AGENT_RESPONSE_SCHEMA.md: all filtered flights, top N with offers."""
+        filtered_results = CleartripAgent._filter_items_for_offers(results, filters)
+        filtered_results.sort(key=lambda f: (f.get("price") is None, f.get("price", float("inf"))))
+        out: list[dict] = []
+        for i, flight in enumerate(filtered_results):
+            item = dict(flight)
+            if i < len(offers_analysis):
+                o = offers_analysis[i]
+                item["offers"] = {
+                    "booking_url": (o.get("additional_urls") or {}).get("itinerary") or "",
+                    "fare_details": o.get("fare_breakdown") or {},
+                    "coupons": o.get("coupons") or [],
+                    "best_price_after_coupon": o.get("best_price_after_coupon"),
+                }
+                # Back-fill book_url for app deep links
+                item["book_url"] = item["offers"]["booking_url"]
+            else:
+                item["offers"] = None
+                item["book_url"] = item.get("book_url") or ""
+            out.append(item)
+        return out
+
+    @staticmethod
     def _apply_convenience_fee_from_first(offers_analysis: list[dict]) -> None:
         """Use convenience_fee from the first offer that has it; apply only that value to others.
         Do not use base_fare/taxes/total_fare from index 0 — each offer keeps its own fare; we only reuse convenience_fee.
@@ -974,6 +1002,7 @@ class CleartripAgent:
                                         ]
                                 self._apply_convenience_fee_from_first(offers_analysis)
                                 telemetry["timings_ms"]["total_search_ms"] = _elapsed_ms(search_started)
+                                filtered = self._build_filtered_with_offers(results, filters, offers_analysis)
                                 log.info(
                                     "Cleartrip telemetry: total=%dms phase1=%dms harvest=%dms parallel=%dms",
                                     telemetry["timings_ms"].get("total_search_ms", 0),
@@ -984,6 +1013,7 @@ class CleartripAgent:
                                 return {
                                     "telemetry": telemetry,
                                     "flights": results,
+                                    "filtered": filtered,
                                     "offers_analysis": offers_analysis,
                                 }
                             except Exception as off_e:

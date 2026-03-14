@@ -6,6 +6,7 @@ This is a DATA EXTRACTION task on Ixigo's flight search results page.
 - Do NOT fill any search form. Results are already loaded.
 - Do NOT click any "Sort by" button. Do NOT change the sort order.
 - Do NOT click any "Book" button. Do NOT navigate away from this page.
+- **Dwell at top:** Wait about 3 seconds at the very top of the results list before your first scroll so the full list can finish loading (avoids skeleton placeholders).
 
 ## Extraction
 

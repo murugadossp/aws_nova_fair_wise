@@ -59,11 +59,9 @@ time_buckets:
     end: 1440
     ixigo_value: "NIGHT"
 
-# TIME OPTIMIZATION: proceed as soon as the flight list is in the DOM (avoids static 5s wait)
-# Stable Ixigo selector; fallback to static sleep if selector fails or times out
-wait_for_selector: "[data-testid='flight-list']"
-# Max wait for selector before falling back to static sleep (ms)
-wait_for_selector_timeout_ms: 15000
+# Wait for results: [data-testid='pricing'] = Ixigo results container; null = static 4s only. 1s fast-fail so AI can start popup dismiss sooner; use 2000+ for slow networks.
+wait_for_selector: "[data-testid='pricing']"
+wait_for_selector_timeout_ms: 1000
 
 offers_top_n: 2
 offers_parallel: true

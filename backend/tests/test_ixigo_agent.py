@@ -28,7 +28,7 @@ log = get_logger(__name__)
 
 RUN_PHASE_1 = True
 RUN_PHASE_2 = True
-RUN_PHASE_3 = False  # temporarily P1+P2 only; set True for full P3 (offers)
+RUN_PHASE_3 = True   # P3: fetch offers (book + coupons) for top 2 filtered flights
 
 REQUIRED_FLIGHT_FIELDS = (
     "airline", "flight_number", "departure", "arrival",
@@ -106,6 +106,7 @@ def test_ixigo_search(from_city="Bengaluru", to_city="Hyderabad", days_from_now=
 
     agent = IxigoAgent()
     offers_analysis = []
+    filtered_from_agent = []
 
     # --- Single-session path: P1 + P3 when RUN_PHASE_3 ---
     if RUN_PHASE_3 and RUN_PHASE_1:
@@ -121,6 +122,8 @@ def test_ixigo_search(from_city="Bengaluru", to_city="Hyderabad", days_from_now=
         assert_ok(isinstance(result, dict), f"fetch_offers=True should return dict, got {type(result)}")
         results = result.get("flights", [])
         offers_analysis = result.get("offers_analysis", [])
+        # Agent returns app-ready "filtered" (all options, top N with offers) when fetch_offers=True
+        filtered_from_agent = result.get("filtered", [])
     else:
         # --- Phase 1 only ---
         log.info("Phase 1: Starting Nova Act browser on ixigo.com...")
@@ -153,20 +156,33 @@ def test_ixigo_search(from_city="Bengaluru", to_city="Hyderabad", days_from_now=
     log.info("Phase 1 PASSED (%d flights)", len(results))
 
     # --- Phase 2: FlightNormalizer (for display/validation; already applied in-agent when fetch_offers=True) ---
-    filtered = results
-    if RUN_PHASE_2 and filters:
-        normalizer = FlightNormalizer()
-        filtered = normalizer.normalize(results, filters=filters)
-        log.info("Phase 2: FlightNormalizer %d → %d flights", len(results), len(filtered))
+    if RUN_PHASE_3 and RUN_PHASE_1 and filtered_from_agent:
+        filtered = filtered_from_agent  # app-ready list: all options, top N have offers
+        log.info("Phase 2: using agent filtered (%d flights, top %d with offers)", len(filtered), len(offers_analysis))
         for i, f in enumerate(filtered, 1):
-            log.info("  [%d] %s %s  dep=%s arr=%s  price=₹%s",
+            has_offers = (f.get("offers") is not None) and (f.get("offers") != {})
+            log.info("  [%d] %s %s  dep=%s arr=%s  price=₹%s  offers=%s",
                      i, f.get("airline"), f.get("flight_number"),
-                     f.get("departure"), f.get("arrival"), f.get("price"))
+                     f.get("departure"), f.get("arrival"), f.get("price"), has_offers)
         if filtered:
-            validate_filtered_results(filtered, filters)
-        log.info("Phase 2 PASSED (%d → %d filtered)", len(results), len(filtered))
+            base = [{k: v for k, v in f.items() if k != "offers"} for f in filtered]
+            validate_filtered_results(base, filters)
+        log.info("Phase 2 PASSED (agent filtered)")
     else:
-        log.info("Phase 2 SKIPPED%s", "" if not filters else " (RUN_PHASE_2=False)")
+        filtered = results
+        if RUN_PHASE_2 and filters:
+            normalizer = FlightNormalizer()
+            filtered = normalizer.normalize(results, filters=filters)
+            log.info("Phase 2: FlightNormalizer %d → %d flights", len(results), len(filtered))
+            for i, f in enumerate(filtered, 1):
+                log.info("  [%d] %s %s  dep=%s arr=%s  price=₹%s",
+                         i, f.get("airline"), f.get("flight_number"),
+                         f.get("departure"), f.get("arrival"), f.get("price"))
+            if filtered:
+                validate_filtered_results(filtered, filters)
+            log.info("Phase 2 PASSED (%d → %d filtered)", len(results), len(filtered))
+        else:
+            log.info("Phase 2 SKIPPED%s", "" if not filters else " (RUN_PHASE_2=False)")
 
     # --- Phase 3: if we used single-session, offers_analysis already set; else fetch separately ---
     if RUN_PHASE_3 and not (RUN_PHASE_3 and RUN_PHASE_1) and filtered:
@@ -217,12 +233,17 @@ if __name__ == "__main__":
     }
     # Temporarily: P1+P2 only, Hyderabad → Bengaluru, 14 Mar
     result = test_ixigo_search(
-        "Hyderabad",
+        "Chennai",
         "Bengaluru",
-        travel_date="2026-03-14",
+        travel_date="2026-04-02",
         filters=filters,
     )
     assert "raw" in result and "filtered" in result and "offers_analysis" in result, "test must return {raw, filtered, offers_analysis}"
     log.info("Full results JSON:\n%s", json.dumps(result, indent=2, default=str))
-    log.info("Ixigo agent test DONE (P1+P2 only: raw=%d, filtered=%d)",
-             len(result["raw"]), len(result["filtered"]))
+    offers = result.get("offers_analysis") or []
+    if offers:
+        log.info("Ixigo agent test DONE (P1+P2+P3: raw=%d, filtered=%d, offers=%d)",
+                 len(result["raw"]), len(result["filtered"]), len(offers))
+    else:
+        log.info("Ixigo agent test DONE (P1+P2 only: raw=%d, filtered=%d)",
+                 len(result["raw"]), len(result["filtered"]))
