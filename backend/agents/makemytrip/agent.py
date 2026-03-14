@@ -622,6 +622,111 @@ class MakeMyTripAgent:
                 # any ERR_HTTP2 error propagates to our except block where we can retry it.
                 nova.page.wait_for_load_state("load")   # about:blank — returns immediately
 
+                # Mask headless browser signals that trigger MMT's bot detection.
+                # Headless Chrome differs from real Chrome in several detectable ways:
+                #   • UA contains "HeadlessChrome" → replaced via set_extra_http_headers (HTTP layer)
+                #   • navigator.webdriver = true  → overridden via add_init_script (JS layer)
+                #   • window.chrome is undefined  → add_init_script adds realistic mock
+                #   • navigator.plugins is empty  → add_init_script adds common plugin entries
+                # sec-ch-ua Client Hint headers are also set to match Chrome/122 for consistency.
+                if headless:
+                    _REAL_UA = (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/133.0.0.0 Safari/537.36"
+                    )
+                    nova.page.context.set_extra_http_headers({
+                        "User-Agent": _REAL_UA,
+                        "sec-ch-ua": '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+                        "sec-ch-ua-mobile": "?0",
+                        "sec-ch-ua-platform": '"macOS"',
+                    })
+                    nova.page.add_init_script(f"""
+    (function() {{
+        // User-Agent (JS-visible string)
+        Object.defineProperty(navigator, 'userAgent', {{get: () => '{_REAL_UA}'}});
+
+        // webdriver flag — primary Playwright/Selenium detection signal
+        Object.defineProperty(navigator, 'webdriver', {{get: () => undefined}});
+
+        // window.chrome — absent or incomplete in headless Chromium
+        if (!window.chrome) {{
+            window.chrome = {{
+                runtime: {{ id: undefined, connect: function() {{}}, sendMessage: function() {{}} }},
+                app: {{}}, csi: function() {{}}, loadTimes: function() {{}}
+            }};
+        }}
+
+        // navigator.plugins — empty in headless; real Chrome has 3-5 named entries
+        Object.defineProperty(navigator, 'plugins', {{get: () => [
+            {{name: 'PDF Viewer',          filename: 'internal-pdf-viewer', description: 'Portable Document Format'}},
+            {{name: 'Chrome PDF Viewer',   filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''}},
+            {{name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: ''}},
+            {{name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: ''}},
+            {{name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: ''}}
+        ]}});
+
+        // navigator.languages — headless often uses a single or empty value
+        Object.defineProperty(navigator, 'languages', {{get: () => ['en-US', 'en']}});
+
+        // Hardware concurrency — headless Chromium defaults to 1; real Mac has 8-10
+        Object.defineProperty(navigator, 'hardwareConcurrency', {{get: () => 8}});
+
+        // Device memory — headless may return 0 or undefined; real Mac: 8 GB
+        Object.defineProperty(navigator, 'deviceMemory', {{get: () => 8}});
+
+        // outerWidth / outerHeight — 0 in headless (no browser UI chrome);
+        // real browsers: outerHeight = innerHeight + ~88px for the address bar
+        try {{
+            Object.defineProperty(window, 'outerWidth',  {{get: () => screen.width  || 1440}});
+            Object.defineProperty(window, 'outerHeight', {{get: () => (screen.height || 900)}});
+        }} catch(e) {{}}
+
+        // screen colorDepth / pixelDepth — be explicit; some headless builds differ
+        try {{
+            Object.defineProperty(screen, 'colorDepth', {{get: () => 24}});
+            Object.defineProperty(screen, 'pixelDepth',  {{get: () => 24}});
+        }} catch(e) {{}}
+
+        // navigator.permissions — headless returns 'denied' for notifications
+        // (no UI to show prompts). Real browsers return 'default' or 'prompt'.
+        try {{
+            const _origQuery = navigator.permissions.query.bind(navigator.permissions);
+            navigator.permissions.query = function(desc) {{
+                if (desc && desc.name === 'notifications') {{
+                    return Promise.resolve({{ state: 'default', onchange: null }});
+                }}
+                return _origQuery(desc);
+            }};
+        }} catch(e) {{}}
+
+        // Canvas fingerprint noise — headless Chromium renders canvas identically
+        // across every session (same pixel hash = strong bot signal). A one-bit
+        // flip in the top-left pixel makes each session unique without any visible
+        // rendering change. The flip is applied and immediately reverted so it
+        // doesn't affect page UI; only toDataURL() (used for fingerprinting) sees it.
+        try {{
+            const _toDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function() {{
+                if (this.width > 0 && this.height > 0) {{
+                    const ctx = this.getContext('2d');
+                    if (ctx) {{
+                        const p = ctx.getImageData(0, 0, 1, 1);
+                        p.data[0] ^= 1;            // flip one low bit
+                        ctx.putImageData(p, 0, 0);
+                        const res = _toDataURL.apply(this, arguments);
+                        p.data[0] ^= 1;            // restore immediately
+                        ctx.putImageData(p, 0, 0);
+                        return res;
+                    }}
+                }}
+                return _toDataURL.apply(this, arguments);
+            }};
+        }} catch(e) {{}}
+
+    }})();
+    """)
+
                 # First real HTTP connection to makemytrip.com. If Akamai rejects this with
                 # ERR_HTTP2_PROTOCOL_ERROR or stalls the response (tarpit), the exception
                 # propagates to our retry block. timeout=60000 gives extra headroom for
@@ -649,111 +754,6 @@ class MakeMyTripAgent:
                 sleep(3)  # minimum dwell: Akamai sensor typically completes within 2-3s
                 log.debug("MMT: Akamai warm-up complete — proceeding to fingerprint masking")
 
-                # Mask headless browser signals that trigger MMT's bot detection.
-                # Headless Chrome differs from real Chrome in several detectable ways:
-                #   • UA contains "HeadlessChrome" → replaced via set_extra_http_headers (HTTP layer)
-                #   • navigator.webdriver = true  → overridden via add_init_script (JS layer)
-                #   • window.chrome is undefined  → add_init_script adds realistic mock
-                #   • navigator.plugins is empty  → add_init_script adds common plugin entries
-                # sec-ch-ua Client Hint headers are also set to match Chrome/122 for consistency.
-                _REAL_UA = (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/122.0.0.0 Safari/537.36"
-                )
-                nova.page.context.set_extra_http_headers({
-                    "User-Agent": _REAL_UA,
-                    "sec-ch-ua": '"Google Chrome";v="122", "Not(A:Brand";v="24", "Chromium";v="122"',
-                    "sec-ch-ua-mobile": "?0",
-                    "sec-ch-ua-platform": '"macOS"',
-                })
-                # add_init_script registered BEFORE goto() — runs inside the search page document
-                # before React scripts execute, so MMT sees the patched navigator/window.
-                nova.page.add_init_script(f"""
-(function() {{
-    // User-Agent (JS-visible string)
-    Object.defineProperty(navigator, 'userAgent', {{get: () => '{_REAL_UA}'}});
-
-    // webdriver flag — primary Playwright/Selenium detection signal
-    Object.defineProperty(navigator, 'webdriver', {{get: () => undefined}});
-
-    // window.chrome — absent or incomplete in headless Chromium
-    if (!window.chrome) {{
-        window.chrome = {{
-            runtime: {{ id: undefined, connect: function() {{}}, sendMessage: function() {{}} }},
-            app: {{}}, csi: function() {{}}, loadTimes: function() {{}}
-        }};
-    }}
-
-    // navigator.plugins — empty in headless; real Chrome has 3-5 named entries
-    Object.defineProperty(navigator, 'plugins', {{get: () => [
-        {{name: 'PDF Viewer',          filename: 'internal-pdf-viewer', description: 'Portable Document Format'}},
-        {{name: 'Chrome PDF Viewer',   filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''}},
-        {{name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: ''}},
-        {{name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: ''}},
-        {{name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: ''}}
-    ]}});
-
-    // navigator.languages — headless often uses a single or empty value
-    Object.defineProperty(navigator, 'languages', {{get: () => ['en-US', 'en']}});
-
-    // Hardware concurrency — headless Chromium defaults to 1; real Mac has 8-10
-    Object.defineProperty(navigator, 'hardwareConcurrency', {{get: () => 8}});
-
-    // Device memory — headless may return 0 or undefined; real Mac: 8 GB
-    Object.defineProperty(navigator, 'deviceMemory', {{get: () => 8}});
-
-    // outerWidth / outerHeight — 0 in headless (no browser UI chrome);
-    // real browsers: outerHeight = innerHeight + ~88px for the address bar
-    try {{
-        Object.defineProperty(window, 'outerWidth',  {{get: () => screen.width  || 1440}});
-        Object.defineProperty(window, 'outerHeight', {{get: () => (screen.height || 900)}});
-    }} catch(e) {{}}
-
-    // screen colorDepth / pixelDepth — be explicit; some headless builds differ
-    try {{
-        Object.defineProperty(screen, 'colorDepth', {{get: () => 24}});
-        Object.defineProperty(screen, 'pixelDepth',  {{get: () => 24}});
-    }} catch(e) {{}}
-
-    // navigator.permissions — headless returns 'denied' for notifications
-    // (no UI to show prompts). Real browsers return 'default' or 'prompt'.
-    try {{
-        const _origQuery = navigator.permissions.query.bind(navigator.permissions);
-        navigator.permissions.query = function(desc) {{
-            if (desc && desc.name === 'notifications') {{
-                return Promise.resolve({{ state: 'default', onchange: null }});
-            }}
-            return _origQuery(desc);
-        }};
-    }} catch(e) {{}}
-
-    // Canvas fingerprint noise — headless Chromium renders canvas identically
-    // across every session (same pixel hash = strong bot signal). A one-bit
-    // flip in the top-left pixel makes each session unique without any visible
-    // rendering change. The flip is applied and immediately reverted so it
-    // doesn't affect page UI; only toDataURL() (used for fingerprinting) sees it.
-    try {{
-        const _toDataURL = HTMLCanvasElement.prototype.toDataURL;
-        HTMLCanvasElement.prototype.toDataURL = function() {{
-            if (this.width > 0 && this.height > 0) {{
-                const ctx = this.getContext('2d');
-                if (ctx) {{
-                    const p = ctx.getImageData(0, 0, 1, 1);
-                    p.data[0] ^= 1;            // flip one low bit
-                    ctx.putImageData(p, 0, 0);
-                    const res = _toDataURL.apply(this, arguments);
-                    p.data[0] ^= 1;            // restore immediately
-                    ctx.putImageData(p, 0, 0);
-                    return res;
-                }}
-            }}
-            return _toDataURL.apply(this, arguments);
-        }};
-    }} catch(e) {{}}
-
-}})();
-""")
 
                 # Humanize homepage interaction before navigating to the search URL.
                 # Akamai's sensor scores sessions with zero pointer events as bot-like.
@@ -768,29 +768,28 @@ class MakeMyTripAgent:
                     pass  # non-fatal if Playwright mouse API unavailable
                 log.debug("MMT: homepage interaction complete — navigating to search URL")
 
-                # Navigate to the search URL via client-side routing (JS router is now loaded).
-                # This triggers the React router — flights render in the DOM, not a server response.
-                nova.page.goto(url)
-                nova.page.wait_for_load_state("domcontentloaded")
+                # Perform a UI-driven search from the homepage instead of direct URL generation.
+                ui_search_cfg = _CONFIG["steps"].get("ui_search")
+                if ui_search_cfg:
+                    ui_search_instr = _sub(
+                        _get_single_instruction(ui_search_cfg),
+                        from_city=from_city,
+                        to_city=to_city,
+                        date=date,
+                    )
+                    log.debug("MMT: Executing UI search act for %s -> %s on %s", from_city, to_city, date)
+                    ui_search_started = perf_counter()
+                    nova.act(ui_search_instr, max_steps=ui_search_cfg.get("max_steps", 15))
+                    telemetry["timings_ms"]["ui_search_ms"] = _elapsed_ms(ui_search_started)
+                else:
+                    # Fallback to direct navigation
+                    nova.page.goto(url)
+                    nova.page.wait_for_load_state("domcontentloaded")
 
                 # Wait for flight listings to finish rendering before extraction.
-                # IMPORTANT: instruction must NOT include REFRESH — with the UA override active,
-                # clicking REFRESH causes a full server reload that lands on the raw "200-OK" API
-                # JSON response instead of staying in the React SPA. (Attempt 5 regression.)
                 wait_instruction = (_CONFIG["steps"].get("wait") or {}).get("instruction")
                 if wait_instruction:
                     nova.act(wait_instruction)
-
-                # Page-drift guard: if the wait step caused navigation away from the search URL
-                # (e.g. to the raw "200-OK" API endpoint), restore the search page before extraction.
-                # The model cannot reliably recover from this on its own (hallucinates URLs).
-                if "itinerary=" not in nova.page.url:
-                    log.warning(
-                        "MMT: page drifted after wait step (now: %s); restoring search page",
-                        nova.page.url,
-                    )
-                    nova.page.goto(url)
-                    nova.page.wait_for_load_state("domcontentloaded")
 
                 # Apply departure / arrival time filters on the MMT UI before extraction.
                 # This clicks the time-slot buttons ("Before 6 AM", "6 AM to 12 PM",

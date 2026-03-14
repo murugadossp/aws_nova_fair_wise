@@ -45,11 +45,12 @@ city_codes:
   aurangabad: IXU
 
 steps:
+  ui_search:
+    instruction_file: instructions/ui_search.md
+    max_steps: 15
   wait:
     instruction: >-
-      Wait up to 10 seconds for flight listings to appear on the page.
-      Do NOT click REFRESH. Do NOT fill the search form. Do NOT click SEARCH.
-      Do NOT interact with anything at all. Simply wait, then finish this step.
+      Wait for the flight listings to fully load. Use the wait command until the flight cards are visible. Do not refresh or navigate away from this page.
   apply_filters:
     instruction_file: instructions/apply_filters.md
     max_steps: 8
