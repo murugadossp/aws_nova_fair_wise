@@ -37,7 +37,8 @@ usage() {
   echo -e "    ${YELLOW}mmt-itinerary${NC}  MakeMyTrip single itinerary probe  (Nova Act · browser)"
   echo -e "    ${YELLOW}cleartrip${NC}    Cleartrip flight search              (Nova Act · browser)"
   echo -e "    ${YELLOW}cleartrip-itinerary${NC}  Cleartrip single itinerary probe   (Nova Act · browser)"
-  echo -e "    ${YELLOW}ixigo${NC}        Ixigo flight search                  (Nova Act · browser)"
+  echo -e "    ${YELLOW}ixigo${NC}        Ixigo flight search                  (Nova Act · browser)
+    ${YELLOW}ixigo --phase1-only${NC}  Ixigo Phase 1 extract only (no booking, ~3-4 min)"
   echo -e "    ${YELLOW}goibibo${NC}      Goibibo flight search (legacy)       (Nova Act · browser)"
   echo ""
   echo -e "  ${CYAN}Nova model tests:${NC}"
@@ -82,11 +83,13 @@ _failed=0
 run_test() {
   local label="$1"
   local script="$2"
+  shift 2
+  # Any remaining args are passed through to the python script (e.g. --phase1-only)
 
   echo ""
   echo -e "${BOLD}${CYAN}── $label ──────────────────────${NC}"
 
-  if python "$TESTS/$script"; then
+  if python "$TESTS/$script" "$@"; then
     echo -e "${GREEN}${BOLD}✓ PASSED${NC}  $label"
     (( _passed++ )) || true
   else
@@ -145,7 +148,12 @@ case "$1" in
     run_test "Cleartrip Single Itinerary" "test_cleartrip_itinerary.py"
     ;;
   ixigo)
-    run_test "Ixigo Agent"          "test_ixigo_agent.py"
+    if [ "${2:-}" = "--phase1-only" ]; then
+      echo -e "\n${BOLD}Ixigo Phase 1 only (no booking funnel)${NC}"
+      run_test "Ixigo Agent — Phase 1" "test_ixigo_agent.py" --phase1-only
+    else
+      run_test "Ixigo Agent"          "test_ixigo_agent.py"
+    fi
     ;;
   goibibo)
     run_test "Goibibo Agent"        "test_goibibo_agent.py"

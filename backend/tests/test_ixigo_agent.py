@@ -28,7 +28,7 @@ log = get_logger(__name__)
 
 RUN_PHASE_1 = True
 RUN_PHASE_2 = True
-RUN_PHASE_3 = True   # P3: fetch offers (book + coupons) for top 2 filtered flights
+RUN_PHASE_3 = "--phase1-only" not in sys.argv   # P3: fetch offers (book + coupons) for top 2 filtered flights
 
 REQUIRED_FLIGHT_FIELDS = (
     "airline", "flight_number", "departure", "arrival",
