@@ -38,25 +38,31 @@ city_codes:
   aurangabad: IXU
 
 time_buckets:
+  # Boundaries verified against Ixigo URL params:
+  #   takeOff=EARLY_MORNING → before 06:00
+  #   takeOff=MORNING       → 06:00–11:59
+  #   takeOff=AFTERNOON     → 12:00–15:59
+  #   takeOff=EVENING       → 16:00–19:59
+  #   takeOff=NIGHT         → 20:00–23:59
   - label: "Early morning"
     start: 0
-    end: 480
+    end: 360        # 00:00–05:59
     ixigo_value: "EARLY_MORNING"
   - label: "Morning"
-    start: 480
-    end: 720
+    start: 360      # 06:00
+    end: 720        # 11:59
     ixigo_value: "MORNING"
   - label: "Afternoon"
-    start: 720
-    end: 960
+    start: 720      # 12:00
+    end: 960        # 15:59
     ixigo_value: "AFTERNOON"
   - label: "Evening"
-    start: 960
-    end: 1200
+    start: 960      # 16:00
+    end: 1200       # 19:59
     ixigo_value: "EVENING"
   - label: "Night"
-    start: 1200
-    end: 1440
+    start: 1200     # 20:00
+    end: 1440       # 23:59
     ixigo_value: "NIGHT"
 
 # Wait for results: null = static 4s sleep only (selector approach removed — [data-testid='pricing'] is not present on Ixigo results page).
