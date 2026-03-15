@@ -64,7 +64,9 @@ app.include_router(voice.router,    prefix="/api/voice",    tags=["Voice"])
 app.include_router(admin.router,    tags=["Admin"])
 
 # ── Static Files: Serve logs directory ──────────────────────────────────────────
-logs_dir = Path("backend/logs")
+# Determine the base directory where main.py is located
+base_dir = Path(__file__).parent
+logs_dir = base_dir / "logs"
 if logs_dir.exists():
     app.mount("/logs", StaticFiles(directory=str(logs_dir)), name="logs")
 
@@ -72,10 +74,11 @@ if logs_dir.exists():
 @app.get("/admin")
 async def admin_dashboard():
     """Serve the admin dashboard HTML."""
-    admin_file = Path("backend/admin-backend.html")
+    base_dir = Path(__file__).parent
+    admin_file = base_dir / "admin-backend.html"
     if admin_file.exists():
-        return FileResponse(admin_file, media_type="text/html")
-    return {"error": "Admin dashboard not found"}
+        return FileResponse(str(admin_file), media_type="text/html")
+    return {"error": f"Admin dashboard not found at {admin_file}"}
 
 # ── Health ─────────────────────────────────────────────────────────────────────
 @app.get("/health")
