@@ -231,11 +231,10 @@ if __name__ == "__main__":
         "max_stops":        0,   # default non-stop; set 1 or 2 only if user asks for stops
         "sort_by":          "price",
     }
-    # Temporarily: P1+P2 only, Hyderabad → Bengaluru, 14 Mar
     result = test_ixigo_search(
-        "Chennai",
         "Bengaluru",
-        travel_date="2026-04-02",
+        "Hyderabad",
+        days_from_now=4,
         filters=filters,
     )
     assert "raw" in result and "filtered" in result and "offers_analysis" in result, "test must return {raw, filtered, offers_analysis}"

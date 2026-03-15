@@ -6,20 +6,25 @@ This is a DATA EXTRACTION task on Ixigo's flight search results page.
 - Do NOT fill any search form. Results are already loaded.
 - Do NOT click any "Sort by" button. Do NOT change the sort order.
 - Do NOT click any "Book" button. Do NOT navigate away from this page.
-- **Dwell at top:** Wait about 5 seconds at the very top of the results list before your first scroll so the full list can finish loading (avoids skeleton placeholders).
+- **Start at top:** Scroll to the very top of the page first. Then wait 1–2 seconds before your first downward scroll (the page has already been given time to hydrate).
 
 ## Extraction — Two-Pass Scroll
 
 **Pass 1 — slow downward scroll:**
-Scroll slowly from the top to the very bottom of the results list, pausing 1–2 seconds every 2–3 cards to let lazy-rendered cards hydrate. For every flight card that becomes visible, record all fields below.
+Scroll slowly from the top to the very bottom of the results list. Pause 1–2 seconds every 2–3 cards to let lazy-rendered cards hydrate. **Record every flight card immediately as it becomes visible — do not wait until the end to record.** Include cards from the very first viewport before any scrolling.
 
-**Pass 2 — upward sweep:**
-After reaching the bottom, scroll back up to the top, recording any cards you missed in Pass 1 (skeleton placeholders that have now loaded). Do not re-record flights already captured.
+If a scroll produces no change in page content:
+- First try scrolling the inner results container (the middle portion of the screen).
+- If that also produces no change, check for a **"Scroll to top ↑"** button at the bottom-left corner of the page.
+- If you see that button — you have reached the bottom of the results. **Click it immediately** to return to the top, then proceed to Pass 2.
+
+**Pass 2 — mandatory upward sweep:**
+Once back at the top (via the "Scroll to top ↑" button or manual scroll), record any cards missed in Pass 1 — skeleton placeholders that have now loaded. Do NOT skip this step even if you think you saw everything.
 
 For each flight card record:
 
 - airline: carrier name as displayed (e.g. "IndiGo", "Air India Express", "SpiceJet")
-- flight_number: exact flight code as shown (e.g. "6E-537", "AI-505", "SG-672") — preserve spaces/dashes exactly
+- flight_number: exact flight code as shown (e.g. "6E-537", "AI-505", "SG-672") — read each digit carefully left-to-right, do NOT transpose or reorder digits. **IndiGo flights always have exactly 4 digits after "6E" (e.g. "6E6081", "6E6892"). If you read only 3 digits after "6E", look again — you likely missed one.**
 - departure: departure time in HH:MM 24-hour format
 - arrival: arrival time in HH:MM 24-hour format
 - duration: total flight time as displayed (e.g. "2h 15m")

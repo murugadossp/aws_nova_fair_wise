@@ -1,6 +1,6 @@
 workflow_name: "farewise-ixigo"
 base_url: "https://www.ixigo.com"
-max_steps_default: 50
+max_steps_default: 25
 
 class_codes:
   economy: e
@@ -71,7 +71,8 @@ wait_for_selector_timeout_ms: 4000
 
 offers_top_n: 5
 offers_parallel: true
-max_parallel_offers: 2
+max_parallel_offers: 5
+parallel_stagger_s: 5   # seconds between each parallel P3 session start (avoids simultaneous bot detection)
 convenience_fee: 449
 min_flights_expected: 5  # warn + retry if Phase 1 extracts fewer than this
 

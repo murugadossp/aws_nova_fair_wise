@@ -49,6 +49,42 @@ def _norm_str(s: object) -> str:
     return re.sub(r"\s+", " ", str(s or "").lower().strip())
 
 
+def _normalize_flight_number(fn: str, airline: str) -> str:
+    """Clean up OCR artifacts in flight numbers.
+
+    Common issues from Nova Act visual extraction:
+      - Internal spaces:  "6E 6081" → "6E6081",  "IX 1487" → "IX1487"
+      - Short IndiGo codes: "6E081" (3 digits) → warn; can't recover dropped digit
+        but stripping spaces first handles the most frequent cause ("6E 6081" → "6E6081")
+
+    Rules:
+      1. Strip all internal spaces and dashes from the numeric portion.
+      2. For IndiGo (prefix 6E): result must be exactly 6 chars (6E + 4 digits).
+         Log a warning if shorter so ops can spot persistent OCR issues.
+    """
+    if not fn:
+        return fn
+
+    # Step 1: collapse spaces/dashes so "6E 6081" → "6E6081", "IX-1487" → "IX1487"
+    cleaned = re.sub(r"[\s\-]+", "", fn.upper())
+
+    # Step 2: IndiGo-specific — must be 6E + exactly 4 digits
+    m = re.match(r"^(6E)(\d+)$", cleaned)
+    if m:
+        digits = m.group(2)
+        if len(digits) < 4:
+            log.warning(
+                "Flight number '%s' (airline=%s) has only %d digit(s) after '6E' — "
+                "likely OCR truncation; expected 4. Raw input: '%s'",
+                cleaned, airline, len(digits), fn,
+            )
+        elif len(digits) > 4:
+            # Trim to 4 — rare but guards against stray characters
+            cleaned = "6E" + digits[:4]
+
+    return cleaned
+
+
 def _parse_hhmm(t: str) -> Optional[int]:
     """Convert 'HH:MM' → minutes-since-midnight, or None if unparseable."""
     try:
@@ -61,14 +97,27 @@ def _parse_hhmm(t: str) -> Optional[int]:
 def _dedup_key(flight: dict) -> tuple:
     """
     Deduplication key: same physical flight regardless of which OTA sourced it.
-    Normalise airline names (e.g. 'Indigo' == 'IndiGo') and strip spaces from
-    flight numbers before comparing.
+    Normalise airline names (e.g. 'Indigo' == 'IndiGo') and strip spaces/dashes
+    from flight numbers before comparing.
+
+    Special case — IndiGo OCR truncation:
+      If the flight number is 6E + fewer than 4 digits (e.g. "6E081"), the
+      full number was likely "6E6081" with a digit dropped by OCR. In that case
+      we dedup by (airline, departure) only — no two IndiGo flights depart at
+      exactly the same time on the same route, so this is safe and merges the
+      truncated reading with the correct one.
     """
     airline = _norm_str(flight.get("airline", ""))
-    # Normalise common airline name variants
     airline = airline.replace("indigo", "indigo").replace("6e", "indigo")
     fn = _norm_str(flight.get("flight_number", "")).replace(" ", "").replace("-", "")
     dep = _norm_str(flight.get("departure", ""))
+
+    # Truncated IndiGo code (< 4 digits after 6E) — dedup by airline+departure only.
+    # Both "6E081" and "6E6081" for the same departure time are the same physical
+    # flight; using departure as the key merges them and keeps whichever was seen first.
+    if re.match(r"^6e\d{1,3}$", fn):
+        return (airline, dep)
+
     return (airline, fn, dep)
 
 
@@ -89,10 +138,14 @@ def _to_canonical(raw: dict) -> Optional[dict]:
     if not price or not raw.get("airline"):
         return None
 
+    airline_str = str(raw.get("airline", "")).strip()
+    fn_raw = str(raw.get("flight_number", "")).strip()
+    fn_clean = _normalize_flight_number(fn_raw, airline_str)
+
     return {
         "platform":      raw.get("platform", "unknown"),
-        "airline":       str(raw.get("airline", "")).strip(),
-        "flight_number": str(raw.get("flight_number", "")).strip(),
+        "airline":       airline_str,
+        "flight_number": fn_clean,
         "departure":     str(raw.get("departure", "")).strip(),
         "arrival":       str(raw.get("arrival", "")).strip(),
         "duration":      str(raw.get("duration", "")).strip(),

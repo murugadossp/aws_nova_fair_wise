@@ -206,15 +206,22 @@ def _build_filtered_with_offers(
     return out
 
 
-def _apply_stealth(nova) -> None:
-    """Apply all bot-detection countermeasures to a Nova session."""
+def _apply_stealth(nova, light: bool = False) -> None:
+    """Apply bot-detection countermeasures to a Nova session.
+
+    light=True: skips the expensive networkidle wait and long sleep — used for
+    P3 sessions that start on the homepage and navigate away immediately.
+    """
     nova.page.wait_for_load_state("load")
 
-    try:
-        nova.page.wait_for_load_state("networkidle", timeout=6000)
-    except Exception:
-        pass
-    sleep(2)
+    if not light:
+        try:
+            nova.page.wait_for_load_state("networkidle", timeout=6000)
+        except Exception:
+            pass
+        sleep(2)
+    else:
+        sleep(0.5)
 
     nova.page.context.set_extra_http_headers({
         "User-Agent": _REAL_UA,
@@ -229,38 +236,39 @@ def _apply_stealth(nova) -> None:
         nova.page.mouse.move(200, 300)
         sleep(0.4)
         nova.page.mouse.move(420, 360)
-        sleep(0.6)
+        sleep(0.3 if light else 0.6)
     except Exception:
         pass
 
 
+def _playwright_dismiss_popups(nova) -> None:
+    """Playwright-based popup dismiss — only effective after a ~3s post-load wait
+    so the JS timer that triggers Ixigo's Price Lock popup has already fired.
+    Each failed selector costs only 300ms; a matched one saves ~8s (2 Nova Act steps).
+    """
+    for selector in [
+        "button:has-text('Okay, Got it!')",
+        "button:has-text('Got it')",
+    ]:
+        try:
+            nova.page.locator(selector).first.click(timeout=300)
+            sleep(0.2)
+            log.info("Ixigo: pre-dismissed popup via Playwright (%s)", selector)
+        except Exception:
+            pass
+
+
+
 def _wait_for_results(nova, url: str) -> None:
-    """Navigate to search URL and wait for results. Dynamic wait for flight-list when configured, else static sleep (racing logic)."""
+    """Navigate to search URL and wait for results to load."""
     nova.page.goto(url)
     nova.page.wait_for_load_state("domcontentloaded")
-
-    selector = _CONFIG.get("wait_for_selector")
-    timeout_ms = _CONFIG.get("wait_for_selector_timeout_ms", 15000)
-    if selector and isinstance(selector, str) and selector.strip():
-        try:
-            log.info("Ixigo: waiting for results container %s (max %d ms)", selector, timeout_ms)
-            nova.page.wait_for_selector(selector.strip(), state="visible", timeout=timeout_ms)
-            sleep(1)  # brief pause for hydration after container is visible (avoids skeleton loaders)
-        except Exception as e:
-            log.warning("Ixigo: wait_for_selector %r failed (%s), falling back to static sleep", selector, e)
-            sleep(4)
-    else:
-        sleep(4)
+    sleep(2)  # brief buffer for React hydration after DOM parse
 
     if "search/result/flight" not in nova.page.url:
         log.warning("Ixigo: page drifted (now: %s); restoring", nova.page.url)
         nova.page.goto(url)
         nova.page.wait_for_load_state("domcontentloaded")
-        if selector and isinstance(selector, str) and selector.strip():
-            try:
-                nova.page.wait_for_selector(selector.strip(), state="visible", timeout=timeout_ms)
-            except Exception:
-                pass
         sleep(2)
 
 
@@ -276,6 +284,7 @@ class IxigoAgent:
         conv_fee = _CONFIG.get("convenience_fee", 0)
         airline = flight.get("airline", "")
         flight_number = flight.get("flight_number", "")
+        departure = flight.get("departure", "")
         price = int(flight.get("price", 0) or 0)
 
         offer: dict = {
@@ -299,10 +308,16 @@ class IxigoAgent:
                 log.info("Offers [%d/%d]: used Phase 1 book_url → %s", idx + 1, total, nova.page.url[:80])
             else:
                 _wait_for_results(nova, url)
+                # Wait for JS-timer popup to fire, then dismiss cheaply via Playwright.
+                # Popup typically appears 2-3s after page load — this avoids burning
+                # 2 Nova Act steps (~8s) on popup dismissal.
+                sleep(3)
+                _playwright_dismiss_popups(nova)
                 instruction = _sub(
                     _get_instruction(book_cfg),
                     airline=airline,
                     flight_number=flight_number,
+                    departure=departure,
                     price=str(price),
                 )
                 nova.act(instruction, max_steps=book_cfg.get("max_steps", 30))
@@ -372,7 +387,12 @@ class IxigoAgent:
         return offer
 
     def _run_one_offer_in_new_session(self, target: dict, url: str, idx: int, total: int) -> dict:
-        """Open a new Nova session, load search page, process this one target. Returns one offer dict (for parallel P3)."""
+        """Open a new Nova session and process this one target. Returns one offer dict (for parallel P3).
+
+        Uses light stealth (no heavy networkidle wait) since the homepage is only a
+        launching pad — the session navigates away immediately to the search results or
+        direct booking URL. Navigation and popup dismissal are handled in _process_one_target.
+        """
         workflow_name = _CONFIG["workflow_name"]
         homepage = _CONFIG["base_url"] + "/"
         get_or_create_workflow_definition(workflow_name)
@@ -380,8 +400,7 @@ class IxigoAgent:
         with Workflow(workflow_definition_name=workflow_name, model_id="nova-act-latest") as wf, \
                 NovaAct(workflow=wf, starting_page=homepage, headless=headless,
                         tty=False, ignore_https_errors=True) as nova:
-            _apply_stealth(nova)
-            _wait_for_results(nova, url)
+            _apply_stealth(nova, light=True)
             return self._process_one_target(nova, target, url, idx, total)
 
     def _run_offer_loop_parallel(self, targets: list[dict], url: str) -> list[dict]:
@@ -394,11 +413,14 @@ class IxigoAgent:
         max_workers = min(_CONFIG.get("max_parallel_offers", 2), total)
         log.info("Ixigo fetch_offers: parallel mode, %d sessions for %d targets", max_workers, total)
         offers_analysis: list[dict] = [None] * total
+        stagger_s = _CONFIG.get("parallel_stagger_s", 5)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(self._run_one_offer_in_new_session, t, url, idx, total): idx
-                for idx, t in enumerate(targets)
-            }
+            futures = {}
+            for idx, t in enumerate(targets):
+                if idx > 0:
+                    sleep(stagger_s)
+                    log.debug("Ixigo P3: staggered session %d/%d (delay %ds)", idx + 1, total, stagger_s)
+                futures[executor.submit(self._run_one_offer_in_new_session, t, url, idx, total)] = idx
             for future in as_completed(futures):
                 idx = futures[future]
                 try:
@@ -537,9 +559,13 @@ class IxigoAgent:
 
                 _apply_stealth(nova)
                 _wait_for_results(nova, url)
+                # Give JS-timer popups 3s to appear, then dismiss via Playwright before Nova Act starts
+                sleep(3)
+                _playwright_dismiss_popups(nova)
+                log.debug("Ixigo P1: pre-extraction popup dismiss done")
                 # Skeleton prevention: dwell so results list can hydrate before extraction scroll
-                sleep(5)
-                log.debug("Ixigo: post-wait dwell (5s) for results hydration")
+                sleep(1)
+                log.debug("Ixigo: post-wait dwell (1s) for results hydration")
 
                 extraction_cfg = _CONFIG["steps"]["extraction"]
                 min_flights = _CONFIG.get("min_flights_expected", 5)
@@ -565,9 +591,15 @@ class IxigoAgent:
                 # Retry once if we got suspiciously few flights (page may not have hydrated fully)
                 if items is not None and len(items) < min_flights:
                     log.warning(
-                        "Ixigo Phase 1: only %d flights (< %d expected) — waiting 4s and retrying extraction",
+                        "Ixigo Phase 1: only %d flights (< %d expected) — scrolling to top and retrying extraction",
                         len(items), min_flights,
                     )
+                    # Scroll back to top so retry starts fresh from card #1, not from bottom
+                    try:
+                        nova.page.evaluate("window.scrollTo(0, 0); document.documentElement.scrollTop = 0;")
+                        log.debug("Ixigo Phase 1 retry: scrolled to top via Playwright")
+                    except Exception:
+                        pass
                     sleep(4)
                     retry_items = _parse_items(_do_extraction())
                     if retry_items is not None and len(retry_items) > len(items):
