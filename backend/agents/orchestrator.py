@@ -18,6 +18,7 @@ from fastapi import WebSocket
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import get_logger
+from session_logger import get_session_logger
 
 from agents.amazon import AmazonAgent
 from agents.flipkart import FlipkartAgent
@@ -192,6 +193,7 @@ class TravelOrchestrator:
         self.planner    = TravelPlanner()
         self.normalizer = FlightNormalizer()
         self.reasoner   = NovaReasoner()
+        self.logger     = get_session_logger()
 
     async def _send(self, msg: dict):
         await self.ws.send_json(msg)
@@ -307,6 +309,17 @@ class TravelOrchestrator:
                 from_city, to_city, date, travel_class, agent_names, filters,
             )
 
+            # ── Create session logger for this search ──────────────────────────────
+            session_id = self.logger.create_session(
+                from_city=from_city,
+                to_city=to_city,
+                date=date,
+                travel_class=travel_class,
+                agents=agent_names,
+                filters=filters,
+            )
+            log.info(f"Search session created: {session_id}")
+
             await self._send({
                 "type":    "plan",
                 "route":   {"from": from_city, "to": to_city, "date": date, "class": travel_class},
@@ -397,6 +410,15 @@ class TravelOrchestrator:
                 "count": top_n_for_reasoning
             })
 
+            # Log coupon analysis scope
+            self.logger.log_phase(
+                phase="offers_analysis_scope",
+                agent="orchestrator",
+                duration_ms=0,
+                status="success",
+                details={"flights_to_analyze": coupon_flight_ids, "count": top_n_for_reasoning}
+            )
+
             # ── Step 4: Rank — Nova Pro applies card offers, picks winner ─────
             await self._send({"type": "progress", "step": "ranking",
                                "message": f"Analyzing card offers for {top_n_for_reasoning} flights…"})
@@ -452,8 +474,22 @@ class TravelOrchestrator:
             await self._send(payload)
 
             log.info("TravelOrchestrator completed: winner=%s", deal.get("winner", {}).get("platform"))
+
+            # Finalize session with summary
+            winner = deal.get("winner", {})
+            self.logger.finalize_session(
+                status="completed",
+                summary={
+                    "total_flights": len(flights),
+                    "flights_analyzed": min(5, len(flights)),
+                    "winner": f"{winner.get('airline')} {winner.get('flight_number')} at ₹{winner.get('price_effective')}",
+                }
+            )
+
             await self._send({"type": "done"})
 
         except Exception as e:
             log.error("TravelOrchestrator unhandled exception: %s", e)
+            self.logger.log_error(str(e), "Unhandled exception during search", "orchestrator")
+            self.logger.finalize_session(status="failed", summary={"error": str(e)})
             await self._send({"type": "error", "message": f"Flight search failed: {str(e)}"})
