@@ -187,11 +187,16 @@ Return ONLY this JSON structure:
 
     @staticmethod
     def _baseline_price(flight: dict) -> int:
-        """Python-computed effective price: best_price_after_coupon → final_price → raw price."""
+        """Python-computed effective price: best_price_after_coupon → final_price/total_fare → raw price.
+
+        Checks both 'final_price' (Ixigo schema) and 'total_fare' (Cleartrip schema) so this
+        method works correctly for all agents in multi-agent sessions.
+        """
         bpac = (flight.get("offers") or {}).get("best_price_after_coupon")
         if bpac is not None:
             return int(bpac)
-        fp = (flight.get("offers") or {}).get("fare_details", {}).get("final_price")
+        fd = (flight.get("offers") or {}).get("fare_details", {})
+        fp = fd.get("final_price") or fd.get("total_fare")
         if fp is not None:
             return int(fp)
         return int(flight.get("price") or 0)

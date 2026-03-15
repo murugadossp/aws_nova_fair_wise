@@ -19,7 +19,7 @@ import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Callable
 
 import yaml
@@ -39,6 +39,28 @@ log = get_logger(__name__)
 
 with open(_AGENT_DIR / "config.yaml", encoding="utf-8") as _f:
     _CONFIG = yaml.safe_load(_f)
+
+_MIN_EXPECTED_FLIGHTS = 3
+
+
+def _act_with_retry(nova, instruction: str, *, max_retries: int = 1, **kwargs):
+    """Wrap nova.act() with one retry on ActInvalidModelGenerationError.
+
+    Cleartrip-specific: no popup dismissal — we retry after a 1s sleep.
+    Add _playwright_dismiss_popups() here if Cleartrip popup interference
+    is confirmed in session logs.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return nova.act(instruction, **kwargs)
+        except ActInvalidModelGenerationError as e:
+            if attempt >= max_retries:
+                raise
+            log.warning(
+                "ActInvalidModelGenerationError (attempt %d/%d) — retrying after 1s: %s",
+                attempt + 1, max_retries + 1, e,
+            )
+            sleep(1)
 
 
 def _sub(s: str, **kwargs: str) -> str:
@@ -90,7 +112,7 @@ def _run_coupon_extraction(nova, coupons_cfg: dict, price: int, result: dict) ->
     in `result`. Modifies `result` in place.
     """
     inst = _get_single_instruction(coupons_cfg)
-    out = nova.act(inst, max_steps=coupons_cfg.get("max_steps", 12), schema=coupons_cfg.get("schema"))
+    out = _act_with_retry(nova, inst, max_steps=coupons_cfg.get("max_steps", 12), schema=coupons_cfg.get("schema"))
     coupons = (
         getattr(out, "parsed_response", None)
         if isinstance(out, ActGetResult)
@@ -129,7 +151,8 @@ def _run_payment_step(
     timings = result.setdefault("telemetry", {}).setdefault("timings_ms", {})
     started = perf_counter()
     try:
-        output = nova.act(
+        output = _act_with_retry(
+            nova,
             _get_single_instruction(step_cfg),
             max_steps=step_cfg.get("max_steps", 10),
             schema=step_cfg.get("schema"),
@@ -607,9 +630,14 @@ class CleartripAgent:
             item = dict(flight)
             if i < len(offers_analysis):
                 o = offers_analysis[i]
+                fb = o.get("fare_breakdown") or {}
+                # Normalize schema: add final_price alias so _baseline_price() in reasoner.py
+                # works correctly for multi-agent sessions (Ixigo uses final_price; Cleartrip uses total_fare).
+                if fb and "final_price" not in fb and "total_fare" in fb:
+                    fb = {**fb, "final_price": fb["total_fare"]}
                 item["offers"] = {
                     "booking_url": (o.get("additional_urls") or {}).get("itinerary") or "",
-                    "fare_details": o.get("fare_breakdown") or {},
+                    "fare_details": fb,
                     "coupons": o.get("coupons") or [],
                     "best_price_after_coupon": o.get("best_price_after_coupon"),
                 }
@@ -691,7 +719,7 @@ class CleartripAgent:
                     flight_number=flight_number,
                     price=str(price),
                 )
-                nova.act(combined_instruction, max_steps=combined_cfg.get("max_steps", 8))
+                _act_with_retry(nova, combined_instruction, max_steps=combined_cfg.get("max_steps", 8))
                 try:
                     nova.page.wait_for_url("**/flights/itinerary/**/info", timeout=8000)
                 except Exception:
@@ -701,6 +729,7 @@ class CleartripAgent:
                     harvested.append({
                         "flight": flight,
                         "itinerary_url": itinerary_url,
+                        "slot_index": idx,
                         "telemetry": {
                             "flight_number": flight_number,
                             "airline": airline,
@@ -709,10 +738,13 @@ class CleartripAgent:
                         },
                     })
                     log.info("Harvest [%d/%d]: %s %s → %s", idx + 1, len(targets), airline, flight_number, itinerary_url[:60])
+                    # Ixigo-compatible log format for session analysis prompt (CHECK-7b)
+                    log.info("Offers [%d/%d]: on booking page → %s", idx + 1, len(targets), itinerary_url)
                     if on_url_harvested:
                         on_url_harvested(idx, flight, itinerary_url)
                 else:
                     log.warning("Harvest [%d/%d]: invalid URL for %s %s", idx + 1, len(targets), airline, flight_number)
+                    log.warning("Offers [%d/%d]: failed for %s %s — invalid itinerary URL", idx + 1, len(targets), airline, flight_number)
             except Exception as e:
                 log.warning("Harvest [%d/%d]: failed for %s %s: %s", idx + 1, len(targets), airline, flight_number, e)
         return harvested
@@ -847,7 +879,8 @@ class CleartripAgent:
                         log.info("Combined filter+extract: departure=%s arrival=%s (single act)", dep_checkboxes, arr_checkboxes)
                         try:
                             phase1_started = perf_counter()
-                            extracted = nova.act(
+                            extracted = _act_with_retry(
+                                nova,
                                 combined_instruction,
                                 max_steps=max_steps,
                                 schema=extraction_schema,
@@ -872,7 +905,7 @@ class CleartripAgent:
                                 pf_max_steps = prefilter_cfg.get("max_steps", 10)
                                 log.info("Fallback pre-filter: departure=%s arrival=%s", dep_checkboxes, arr_checkboxes)
                                 try:
-                                    nova.act(pf_instruction, max_steps=pf_max_steps)
+                                    _act_with_retry(nova, pf_instruction, max_steps=pf_max_steps)
                                 except Exception as pf_err:
                                     log.warning("Fallback pre-filter failed (%s), extracting unfiltered", pf_err)
 
@@ -881,7 +914,8 @@ class CleartripAgent:
                             criteria=criteria,
                         )
                         phase1_started = perf_counter()
-                        extracted = nova.act(
+                        extracted = _act_with_retry(
+                            nova,
                             extraction_instruction,
                             max_steps=max_steps,
                             schema=extraction_schema,
@@ -900,7 +934,13 @@ class CleartripAgent:
                         items = _dedup_raw_items(items)
                         _log_phase1_candidate_warnings(items, dep_checkboxes, arr_checkboxes)
                         results = _build_results(items, url, from_city, to_city, date, travel_class)
-                        log.info("Cleartrip returned %d flights for %s→%s on %s", len(results), from_city, to_city, date)
+                        log.info("Cleartrip Phase 1: %d flights extracted for %s→%s", len(results), from_city, to_city)
+                        if len(results) < _MIN_EXPECTED_FLIGHTS:
+                            log.warning(
+                                "Cleartrip Phase 1: LOW COUNT — only %d flights for %s→%s %s (expected ≥%d). "
+                                "Route may have fewer flights or extraction was partial.",
+                                len(results), from_city, to_city, date, _MIN_EXPECTED_FLIGHTS,
+                            )
                         
                         if on_progress:
                             try:
@@ -943,7 +983,8 @@ class CleartripAgent:
                                     # ── Phase 5: Extract offers in parallel (one Nova session per flight URL) ────────
                                     # Each session: fare summary first (page is clean), then coupons.
                                     # convenience_fee is propagated from the first offer to all others afterward.
-                                    offers_analysis = []
+                                    # slot_index → offer result dict (preserves dispatch order)
+                                    slot_results: dict[int, dict] = {}
                                     if harvested:
                                         headless = os.environ.get("NOVA_ACT_HEADLESS", "true").lower() == "true"
                                         parallel_started = perf_counter()
@@ -955,22 +996,35 @@ class CleartripAgent:
                                                     h["itinerary_url"],
                                                     h["flight"],
                                                     headless,
-                                                    collect_convenience_fee and idx == convenience_fee_probe_index,
+                                                    collect_convenience_fee and h["slot_index"] == convenience_fee_probe_index,
                                                 ): h
-                                                for idx, h in enumerate(harvested)
+                                                for h in harvested
                                             }
                                             for future in as_completed(futures):
                                                 h = futures[future]
+                                                slot = h["slot_index"]
+                                                total = len(harvested)
+                                                fl = h["flight"]
+                                                airline = fl.get("airline", "?")
+                                                fn = fl.get("flight_number", "?")
                                                 try:
                                                     offer = future.result()
-                                                    offers_analysis.append(offer)
+                                                    slot_results[slot] = offer
+                                                    fb = offer.get("fare_breakdown") or {}
+                                                    coupons = offer.get("coupons") or []
+                                                    log.info(
+                                                        "Offers [%d/%d]: fare base=₹%s taxes=₹%s conv=₹%s → final=₹%s",
+                                                        slot + 1, total,
+                                                        fb.get("base_fare", "?"), fb.get("taxes", "?"),
+                                                        fb.get("convenience_fee", "?"), fb.get("total_fare", "?"),
+                                                    )
+                                                    log.info("Offers [%d/%d]: %d coupons extracted", slot + 1, total, len(coupons))
                                                 except Exception as e:
-                                                    log.warning("Parallel coupons failed for %s %s: %s",
-                                                                h["flight"].get("airline"), h["flight"].get("flight_number"), e)
-                                                    fl = h["flight"]
-                                                    offers_analysis.append({
-                                                        "flight_number": fl["flight_number"],
-                                                        "airline": fl["airline"],
+                                                    log.warning("Parallel coupons failed for %s %s: %s", airline, fn, e)
+                                                    log.warning("Offers [%d/%d]: failed for %s %s — %s", slot + 1, total, airline, fn, e)
+                                                    slot_results[slot] = {
+                                                        "flight_number": fn,
+                                                        "airline": airline,
                                                         "original_price": fl.get("price", 0),
                                                         "fare_type": "VALUE",
                                                         "coupons": [],
@@ -984,12 +1038,10 @@ class CleartripAgent:
                                                             "timings_ms": {},
                                                         },
                                                         "error": str(e),
-                                                    })
+                                                    }
                                         telemetry["timings_ms"]["offer_parallel_wall_clock_ms"] = _elapsed_ms(parallel_started)
-                                        # Preserve order by harvested (flight 1, flight 2)
-                                        key = lambda o: (o.get("airline"), o.get("flight_number"))
-                                        harvested_keys = [(h["flight"]["airline"], h["flight"]["flight_number"]) for h in harvested]
-                                        offers_analysis.sort(key=lambda o: harvested_keys.index(key(o)) if key(o) in harvested_keys else 999)
+                                        # Reconstruct offers_analysis in original dispatch order (slot 0, 1, 2 ...)
+                                        offers_analysis = [slot_results[i] for i in sorted(slot_results)]
                                         telemetry["offer_sessions"] = [
                                             {
                                                 "flight_number": offer.get("flight_number"),

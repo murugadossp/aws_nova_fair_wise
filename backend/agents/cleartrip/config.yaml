@@ -8,7 +8,7 @@ offers_top_n: 5
 # When true: first flight is extracted in main session (same URL not opened again); other flights open in parallel Nova sessions (one URL per session, no duplicate opens).
 # When false: single session only — Book → coupons → (first: skip add-ons + fill traveler → payment fare; others: booking fare) in same tab. One Chrome; slower than parallel.
 use_parallel_offers: true
-max_parallel_offers: 2
+max_parallel_offers: 5
 collect_convenience_fee: true
 convenience_fee_probe_index: 0
 reuse_probe_convenience_fee: true
