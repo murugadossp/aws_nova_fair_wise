@@ -63,31 +63,17 @@ usage() {
   echo ""
 }
 
-# ── Python selection ─────────────────────────────────────────────────────────
-# nova_act may be installed in a system Python (e.g. pyenv 3.12) rather than
-# the project .venv (3.11). We prefer whichever Python can import nova_act.
-find_python() {
-  for py in python3.12 python3.11 python3 python; do
-    if command -v "$py" >/dev/null 2>&1 && "$py" -c "import nova_act" 2>/dev/null; then
-      echo "$py"
-      return
-    fi
-  done
-  # Fallback: use venv python even if nova_act is missing
-  echo "python"
-}
-
 # ── Activate venv ────────────────────────────────────────────────────────────
 activate_venv() {
   if [ ! -f "$VENV" ]; then
-    echo -e "${YELLOW}Warning: .venv not found — using system Python.${NC}"
-  else
-    # shellcheck disable=SC1090
-    source "$VENV"
-    echo -e "${DIM}✓ venv activated${NC}"
+    echo -e "${RED}Error: .venv not found.${NC}"
+    echo -e "  Create:  ${YELLOW}python3.12 -m venv .venv${NC}"
+    echo -e "  Install: ${YELLOW}.venv/bin/pip install -r requirements.txt${NC}"
+    exit 1
   fi
-  PYTHON=$(find_python)
-  echo -e "${DIM}Python: $(command -v "$PYTHON")  ($("$PYTHON" --version 2>&1))${NC}"
+  # shellcheck disable=SC1090
+  source "$VENV"
+  echo -e "${DIM}✓ venv activated  ($(python --version 2>&1))${NC}"
 }
 
 # ── Run single test ───────────────────────────────────────────────────────────
@@ -103,7 +89,7 @@ run_test() {
   echo ""
   echo -e "${BOLD}${CYAN}── $label ──────────────────────${NC}"
 
-  if "$PYTHON" "$TESTS/$script" "$@"; then
+  if python "$TESTS/$script" "$@"; then
     echo -e "${GREEN}${BOLD}✓ PASSED${NC}  $label"
     (( _passed++ )) || true
   else

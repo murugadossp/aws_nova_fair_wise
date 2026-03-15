@@ -97,22 +97,12 @@ usage() {
 
 # ── Pre-flight checks ─────────────────────────────────────────────────────────
 
-# ── Python selection ─────────────────────────────────────────────────────────
-# nova_act may be installed in a system Python (e.g. pyenv 3.12) rather than
-# the project .venv (3.11). We prefer whichever Python can import nova_act.
-find_python() {
-  for py in python3.12 python3.11 python3 python; do
-    if command -v "$py" >/dev/null 2>&1 && "$py" -c "import nova_act" 2>/dev/null; then
-      echo "$py"
-      return
-    fi
-  done
-  echo "python"
-}
-
 check_venv() {
   if [ ! -f "$VENV" ]; then
-    echo -e "${YELLOW}Warning:${NC} .venv not found — using system Python."
+    echo -e "${RED}${BOLD}Error:${NC} .venv not found at $VENV"
+    echo -e "  Create:  ${YELLOW}python3.12 -m venv .venv${NC}"
+    echo -e "  Install: ${YELLOW}.venv/bin/pip install -r requirements.txt${NC}"
+    exit 1
   fi
 }
 
@@ -147,7 +137,7 @@ print_banner() {
   echo -e "  Date:         $run_date"
   echo -e "  Route:        Chennai → Bengaluru  (primary)  |  Mumbai → Delhi  (secondary)"
   echo -e "  Travel date:  2026-03-22"
-  echo -e "  Python:       $("${PYTHON:-python3}" --version 2>&1)"
+  echo -e "  Python:       $(python --version 2>&1)"
   echo -e "  Headed:       ${FAREWISE_HEADED:-0}  (1 = show browser)"
   echo -e "  Log dir:      $LOG_DIR/"
   echo ""
@@ -211,13 +201,9 @@ fi
 # ── Environment setup ─────────────────────────────────────────────────────────
 
 check_venv
-if [ -f "$VENV" ]; then
-  # shellcheck disable=SC1090
-  source "$VENV"
-fi
+# shellcheck disable=SC1090
+source "$VENV"
 check_env
-PYTHON=$(find_python)
-echo -e "${DIM}Python: $(command -v "$PYTHON")  ($("$PYTHON" --version 2>&1))${NC}"
 mkdir -p "$LOG_DIR"
 
 # ── Suite dispatch ────────────────────────────────────────────────────────────
@@ -230,20 +216,20 @@ case "$SUITE" in
       echo -e "  Skipping: Phase 3 offer extraction, orchestrator test"
       echo ""
       cd "$BACKEND_DIR"
-      exec "$PYTHON" tests/test_ixigo_e2e.py --phase1-only
+      exec python tests/test_ixigo_e2e.py --phase1-only
     elif [ "$SKIP_ORCHESTRATOR" -eq 1 ]; then
       print_banner "Ixigo E2E — All phases, skip orchestrator (~5-6 min)"
       echo -e "  Skipping: test_full_orchestrator_pipeline"
       echo ""
       cd "$BACKEND_DIR"
-      exec "$PYTHON" tests/test_ixigo_e2e.py --skip-orchestrator
+      exec python tests/test_ixigo_e2e.py --skip-orchestrator
     else
       print_banner "Ixigo E2E — Full suite, all 7 tests (~8-10 min)"
       echo -e "  Tests: session_logging, phase1_extraction, phase1_normalization,"
       echo -e "         phase1_filters, phase3_offers, on_progress_callbacks, orchestrator"
       echo ""
       cd "$BACKEND_DIR"
-      exec "$PYTHON" tests/test_ixigo_e2e.py
+      exec python tests/test_ixigo_e2e.py
     fi
     ;;
 
@@ -252,7 +238,7 @@ case "$SUITE" in
     echo -e "  Tests: Nova Lite (identifier), Nova Pro (reasoner), Nova Multimodal (validator)"
     echo ""
     cd "$BACKEND_DIR"
-    exec "$PYTHON" tests/run_all_tests.py --nova-only
+    exec python tests/run_all_tests.py --nova-only
     ;;
 
   all)
@@ -261,7 +247,7 @@ case "$SUITE" in
     echo -e "  Estimated time: 15-25 min"
     echo ""
     cd "$BACKEND_DIR"
-    exec "$PYTHON" tests/run_all_tests.py
+    exec python tests/run_all_tests.py
     ;;
 
 esac
