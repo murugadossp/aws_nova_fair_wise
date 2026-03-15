@@ -394,13 +394,12 @@ class TravelOrchestrator:
             await self._send({
                 "type": "coupon_analysis_scope",
                 "flight_ids": coupon_flight_ids,
-                "count": top_n_for_reasoning,
-                "message": f"Extracting best coupon offers for {top_n_for_reasoning} flights…"
+                "count": top_n_for_reasoning
             })
 
             # ── Step 4: Rank — Nova Pro applies card offers, picks winner ─────
             await self._send({"type": "progress", "step": "ranking",
-                               "message": "Applying card discounts to find your best deal…"})
+                               "message": f"Analyzing card offers for {top_n_for_reasoning} flights…"})
             deal = await self.reasoner.calculate_best_flight(
                 flights=flights[:top_n_for_reasoning],  # Top 5 by effective price (coupon-adjusted)
                 selected_cards=cards,

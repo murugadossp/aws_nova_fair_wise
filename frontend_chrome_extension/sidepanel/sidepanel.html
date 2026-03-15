@@ -1017,8 +1017,8 @@
         if (msg.flight_ids) {
           msg.flight_ids.forEach(id => couponAnalysisFlights.add(id));
         }
-        // Update UI to show which flights are being analyzed
-        document.getElementById('progress-main-text').textContent = msg.message;
+        // Don't update progress message - just store the scope for card rendering
+        console.log(`Coupon analysis scope: ${msg.count} flights`, msg.flight_ids);
       }
       else if (msg.type === 'offer_extracted') {
         console.log("Offer extracted for flight:", msg.offer.airline, msg.offer.flight_number);
@@ -1193,12 +1193,13 @@
         let breakdownHtml = '';
 
         // Fare breakdown is already available from Phase 1 extraction
-        if (fd) {
+        // Check that fd has actual data (not just empty object)
+        if (fd && (fd.base_fare || fd.total)) {
             breakdownHtml = `
               <div style="font-size:13px; color:var(--t2); display:flex; gap:12px; margin-top:10px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1.5px solid var(--elevated); font-weight:500;">
-                <span>Base: ₹${fd.base_fare}</span>
-                <span>Taxes: ₹${fd.taxes}</span>
-                <span>Conv. Fee: ₹${fd.convenience_fee || 0}</span>
+                <span>Base: ₹${(fd.base_fare || 0).toLocaleString('en-IN')}</span>
+                <span>Taxes: ₹${(fd.taxes || 0).toLocaleString('en-IN')}</span>
+                <span>Conv. Fee: ₹${(fd.convenience_fee || 0).toLocaleString('en-IN')}</span>
               </div>
             `;
         } else if (isSearchingCoupons) {
@@ -1288,21 +1289,21 @@
       
       const renderCard = (flight, isRaw, badgeHtml, isWinnerOverride) => {
         const pInfo = PLATFORMS[flight.platform] || { name: flight.platform, color: 'gray' };
-        
+
         let breakdownHtml = '';
         const fd = (flight.offers && flight.offers.fare_details) || flight.fare_details || flight.fare_breakdown;
-        if (fd) {
+        // Only render if fd has actual data (not just empty object)
+        if (fd && (fd.base_fare || fd.total)) {
             breakdownHtml = `
               <div style="font-size:13px; color:var(--t2); display:flex; gap:12px; margin-top:10px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1.5px solid var(--elevated); font-weight:500;">
-                <span>Base: ₹${fd.base_fare}</span>
-                <span>Taxes: ₹${fd.taxes}</span>
-                <span>Conv. Fee: ₹${fd.convenience_fee || 0}</span>
+                <span>Base: ₹${(fd.base_fare || 0).toLocaleString('en-IN')}</span>
+                <span>Taxes: ₹${(fd.taxes || 0).toLocaleString('en-IN')}</span>
+                <span>Conv. Fee: ₹${(fd.convenience_fee || 0).toLocaleString('en-IN')}</span>
               </div>
             `;
-        } else if (isRaw && flight.price) {
-            // Secondary flights only have the total price from Phase 1 extraction —
-            // no booking-page offer data was fetched. Show a fallback total row so
-            // the card is not left blank in the breakdown area.
+        } else if (flight.price) {
+            // Flights without detailed breakdown: show total price fallback
+            // This handles both secondary (isRaw) flights and cases where offer extraction failed
             breakdownHtml = `
               <div style="font-size:13px; color:var(--t2); display:flex; gap:12px; margin-top:8px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1.5px solid var(--elevated); font-weight:500;">
                 <span>Total: ₹${(flight.price || 0).toLocaleString('en-IN')}</span>
