@@ -21,10 +21,11 @@ visible during your scroll, record:
 - stops: number of stops as an integer (0 = non-stop)
 - price: total fare in INR as an integer (no currency symbol, no commas)
 - book_url: (optional) if a standard link (href) exists on the "Book" button, capture it. If the button is JavaScript-based or has no href, return an empty string "".
+- fare_details: (optional) if a fare breakdown (Base Fare, Taxes/Fees) is visible or appears on a mini-popup within the card, capture it.
 
 **Verification rule:** If a card still shows a loading/skeleton state, wait 1–2 seconds before recording it; otherwise record as soon as details (price and airline) are visible.
 
-Return up to 7 results. If steps run low, return what you have — do not fail.
+Return up to 10 results. If steps run low, return what you have — do not fail.
 Return ONLY a valid JSON array. No markdown or explanation.
 
 ## STRICT RULES

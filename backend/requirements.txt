@@ -2,13 +2,13 @@
 # Install: pip install -r requirements.txt
 
 # ── Web framework ──────────────────────────────────────────────────────
-fastapi==0.115.5
-uvicorn[standard]==0.32.1
+fastapi>=0.115.5
+uvicorn[standard]>=0.32.1
 python-multipart==0.0.12          # file uploads (product screenshots)
 websockets==13.1                  # WebSocket support
 
 # ── AWS / Amazon Nova ─────────────────────────────────────────────────
-boto3==1.35.71                    # Bedrock (Nova Lite, Nova Multimodal, Nova 2 Lite)
+boto3>=1.42.1                    # Bedrock (Nova Lite, Nova Multimodal, Nova 2 Lite)
 nova-act>=3.1.263.0               # Nova Act browser agents (IAM-based, includes Playwright)
 
 # ── Image processing ──────────────────────────────────────────────────
@@ -21,6 +21,6 @@ numpy==2.1.3                      # Cosine similarity for Nova Multimodal Embedd
 # ── Utilities ─────────────────────────────────────────────────────────
 python-dotenv==1.0.1              # Load .env credentials
 PyYAML>=6.0                      # Agent config.yaml (instructions, schemas)
-pydantic==2.10.1                  # Request/response models (FastAPI uses this)
+pydantic>=2.10.6                  # Request/response models (FastAPI uses this)
 httpx==0.27.2                     # Async HTTP (health checks, thumbnail fetch)
 cachetools==5.5.0                 # TTL cache for card offer data

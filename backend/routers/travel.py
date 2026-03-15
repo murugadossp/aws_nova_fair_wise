@@ -82,3 +82,46 @@ async def parse_voice_route(body: VoiceParseRequest):
     log.info("parse_voice_route result: %s→%s date=%s confidence=%.2f",
              result["from_city"], result["to_city"], result["date"], result["confidence"])
     return result
+
+
+@router.post("/test-cleartrip")
+def test_cleartrip_agent(body: TravelRouteRequest):
+    """Directly test the Cleartrip agent without Orchestrator/WebSockets."""
+    from agents.cleartrip import CleartripAgent
+    agent = CleartripAgent()
+    try:
+        # Run the synchronous agent call 
+        # (This may block the event loop temporarily on this route, but fine for testing)
+        result = agent.search(
+            from_city=body.from_city,
+            to_city=body.to_city,
+            date=body.date,
+            travel_class=body.travel_class,
+            filters=None,
+            fetch_offers=True
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        log.error("Cleartrip agent test failed: %s", e, exc_info=True)
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/test-ixigo")
+def test_ixigo_agent(body: TravelRouteRequest):
+    """Directly test the Ixigo agent without Orchestrator/WebSockets."""
+    from agents.ixigo import IxigoAgent
+    agent = IxigoAgent()
+    try:
+        # Run the synchronous agent call
+        result = agent.search(
+            from_city=body.from_city,
+            to_city=body.to_city,
+            date=body.date,
+            travel_class=body.travel_class,
+            filters=None,
+            fetch_offers=True
+        )
+        return {"status": "success", "result": result}
+    except Exception as e:
+        log.error("Ixigo agent test failed: %s", e, exc_info=True)
+        return {"status": "error", "message": str(e)}

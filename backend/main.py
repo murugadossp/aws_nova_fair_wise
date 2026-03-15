@@ -14,7 +14,8 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
 from logger import get_logger
-from routers import products, travel, voice
+from logger import get_logger
+from routers import travel, voice
 from nova.identifier import NovaIdentifier
 from nova.reasoner import NovaReasoner
 
@@ -57,7 +58,6 @@ app.add_middleware(
 )
 
 # ── Routers ────────────────────────────────────────────────────────────────────
-app.include_router(products.router, prefix="/api/products", tags=["Products"])
 app.include_router(travel.router,   prefix="/api/travel",   tags=["Travel"])
 app.include_router(voice.router,    prefix="/api/voice",    tags=["Voice"])
 
@@ -80,11 +80,9 @@ async def ws_search(websocket: WebSocket, task_id: str):
     try:
         # Wait for the search payload from client
         payload = await asyncio.wait_for(websocket.receive_json(), timeout=10.0)
-        mode = payload.get("mode", "products")  # "products" | "travel"
+        mode = payload.get("mode", "travel")  # default to "travel"
 
-        if mode == "products":
-            await _run_product_search(websocket, payload)
-        elif mode == "travel":
+        if mode == "travel":
             await _run_travel_search(websocket, payload)
         else:
             await websocket.send_json({"type": "error", "message": f"Unknown mode: {mode}"})
@@ -97,18 +95,6 @@ async def ws_search(websocket: WebSocket, task_id: str):
         await websocket.send_json({"type": "error", "message": str(e)})
     finally:
         await websocket.close()
-
-
-async def _run_product_search(ws: WebSocket, payload: dict):
-    """Orchestrate Amazon + Flipkart agents in parallel, stream progress."""
-    from agents.orchestrator import ProductOrchestrator
-
-    query     = payload.get("query", "")
-    image_b64 = payload.get("image_b64")      # base64-encoded screenshot
-    cards     = payload.get("cards", [])
-
-    orchestrator = ProductOrchestrator(ws)
-    await orchestrator.run(query=query, image_b64=image_b64, cards=cards)
 
 
 async def _run_travel_search(ws: WebSocket, payload: dict):

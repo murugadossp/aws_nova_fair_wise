@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "FareWise — Price Intelligence",
   "short_name": "FareWise",
-  "description": "Find the best price for gadgets & flights with your bank card offer. Powered by Amazon Nova.",
+  "description": "Your smart companion for the cheapest flights.",
   "version": "1.0.0",
 
   "icons": {
@@ -41,11 +41,8 @@
   ],
 
   "host_permissions": [
-    "https://*.amazon.in/*",
-    "https://*.flipkart.com/*",
-    "https://*.makemytrip.com/*",
-    "https://*.goibibo.com/*",
-    "https://*.cleartrip.com/*"
+    "https://*.cleartrip.com/*",
+    "https://*.ixigo.com/*"
   ],
 
   "commands": {
@@ -56,14 +53,6 @@
         "linux":   "Ctrl+Shift+F"
       },
       "description": "Open / close FareWise side panel"
-    },
-    "quick-product-search": {
-      "suggested_key": {
-        "mac":     "Command+Shift+P",
-        "windows": "Ctrl+Shift+P",
-        "linux":   "Ctrl+Shift+P"
-      },
-      "description": "Open FareWise in Products mode"
     },
     "quick-travel-search": {
       "suggested_key": {

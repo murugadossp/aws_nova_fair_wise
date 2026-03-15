@@ -33,6 +33,7 @@ if str(_BACKEND_DIR) not in sys.path:
 from logger import get_logger
 from nova_auth import get_or_create_workflow_definition
 from agents.act_handler import ActExceptionHandler
+from nova.flight_normalizer import FlightNormalizer
 
 log = get_logger(__name__)
 
@@ -271,18 +272,17 @@ def _extract_coupon_offer_branch(
                                 base_fare = int(base_fare_raw)
                                 taxes = int(taxes_raw)
                                 conv = int(parsed.get("convenience_fee", 0) or 0)
-                                total = int(parsed.get("total_fare", 0) or 0)
-                                if total == 0:
-                                    total = price
-                                if conv == 0 and total >= base_fare + taxes:
-                                    conv = total - base_fare - taxes
+                                
+                                # Force total to be sum of base + taxes to avoid pre-applied coupons
+                                total = base_fare + taxes
+                                
                                 result["fare_breakdown"] = {
                                     "base_fare": base_fare,
                                     "taxes": taxes,
                                     "convenience_fee": conv,
                                     "total_fare": total,
                                 }
-                                result["original_price"] = total
+                                result["original_price"] = total + conv
                         timings["fare_summary_ms"] = _elapsed_ms(fare_started)
                     except Exception as e:
                         log.debug("Fare summary extraction failed for %s %s: %s", airline, flight_number, e)
@@ -388,6 +388,8 @@ def _build_results(items: list[dict], search_url: str, from_city: str, to_city: 
     """Convert Phase 1 candidate items into result dicts with the search page URL."""
     results = []
     for item in items:
+        if not item.get("airline") or not item.get("price"):
+            continue
         results.append({
             "platform": "cleartrip",
             "from_city": from_city,
@@ -621,23 +623,13 @@ class CleartripAgent:
 
     @staticmethod
     def _apply_convenience_fee_from_first(offers_analysis: list[dict]) -> None:
-        """Use convenience_fee from the first offer that has it; apply only that value to others.
-        Do not use base_fare/taxes/total_fare from index 0 — each offer keeps its own fare; we only reuse convenience_fee.
+        """Use a hardcoded convenience_fee of 350 to speed up extraction without needing a probe session.
         When an offer has empty fare_breakdown (e.g. parallel session hit max_steps), fill a minimal breakdown with
         convenience_fee and total_fare from original_price so the offer still shows a breakdown."""
-        if not _CONFIG.get("reuse_probe_convenience_fee", True):
-            return
         if not offers_analysis:
             return
-        conv = None
-        for offer in offers_analysis:
-            fb = offer.get("fare_breakdown") or {}
-            c = fb.get("convenience_fee")
-            if c is not None and isinstance(c, (int, float)) and c >= 0:
-                conv = c
-                break
-        if conv is None:
-            return
+            
+        conv = 350  # Hardcoded speedup as requested by user
         for i in range(len(offers_analysis)):
             fb = offers_analysis[i].get("fare_breakdown") or {}
             price = int(offers_analysis[i].get("original_price") or 0)
@@ -777,6 +769,7 @@ class CleartripAgent:
         travel_class: str = "economy",
         filters: dict | None = None,
         fetch_offers: bool = False,
+        on_progress=None,
     ) -> list[dict] | dict:
         """Extract ALL flights, then optionally check offers in the same session."""
         log.info("Searching Cleartrip: %s→%s date=%s class=%s fetch_offers=%s", from_city, to_city, date, travel_class, fetch_offers)
@@ -908,6 +901,14 @@ class CleartripAgent:
                         _log_phase1_candidate_warnings(items, dep_checkboxes, arr_checkboxes)
                         results = _build_results(items, url, from_city, to_city, date, travel_class)
                         log.info("Cleartrip returned %d flights for %s→%s on %s", len(results), from_city, to_city, date)
+                        
+                        if on_progress:
+                            try:
+                                normalizer = FlightNormalizer()
+                                normalized = normalizer.normalize(results, filters=filters or {})
+                                on_progress("phase2_start", normalized)
+                            except Exception as pe:
+                                log.warning("Cleartrip on_progress error: %s", pe)
 
                         # ── Phase 3: Filter candidates for offer harvesting ───────────────────────────────
                         if results and fetch_offers:

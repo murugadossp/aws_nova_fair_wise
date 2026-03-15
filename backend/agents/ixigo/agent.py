@@ -314,8 +314,13 @@ class IxigoAgent:
 
             if isinstance(parsed, dict):
                 fare_details = parsed.get("fare_details") or {}
+                base_fare = int(fare_details.get("base_fare", 0) or 0)
+                taxes = int(fare_details.get("taxes", 0) or 0)
+                
+                # Force total to be sum of base + taxes to avoid pre-applied coupons on the page
+                fare_total = base_fare + taxes
+                fare_details["total"] = fare_total
                 fare_details["convenience_fee"] = conv_fee
-                fare_total = int(fare_details.get("total", 0) or 0)
                 fare_details["final_price"] = fare_total + conv_fee
                 offer["fare_details"] = fare_details
                 if fare_details:
@@ -391,7 +396,7 @@ class IxigoAgent:
                     }
         return [o for o in offers_analysis if o is not None]
 
-    def _run_offer_loop(self, nova, targets: list[dict], url: str) -> list[dict]:
+    def _run_offer_loop(self, nova, targets: list[dict], url: str, on_progress=None) -> list[dict]:
         """Sequential: in the current session, for each target Book (or goto book_url) + extract coupons."""
         book_cfg = _CONFIG["steps"].get("book_then_continue")
         coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
@@ -408,6 +413,11 @@ class IxigoAgent:
             log.info("Offers [%d/%d]: %s %s ₹%d", idx + 1, total, airline, flight_number, price)
             offer = self._process_one_target(nova, flight, url, idx, total)
             offers_analysis.append(offer)
+            if on_progress:
+                try:
+                    on_progress("offer_extracted", offer)
+                except Exception as pe:
+                    log.warning("Ixigo offer_extracted progress error: %s", pe)
         return offers_analysis
 
     def _get_code(self, city: str) -> str:
@@ -471,6 +481,7 @@ class IxigoAgent:
         travel_class: str = "economy",
         filters: dict | None = None,
         fetch_offers: bool = False,
+        on_progress=None,
     ) -> list[dict] | dict:
         """Extract flight listings from Ixigo.
 
@@ -543,13 +554,21 @@ class IxigoAgent:
                     filtered = normalizer.normalize(results, filters=filters or {})
                     top_n = _CONFIG.get("offers_top_n", 2)
                     targets = filtered[:top_n]
+                    
+                    if on_progress:
+                        try:
+                            # Send normalized, sorted list to UI instead of raw unstructured results
+                            on_progress("phase2_start", filtered)
+                        except Exception as pe:
+                            log.warning("Ixigo on_progress error: %s", pe)
+
                     use_parallel = _CONFIG.get("offers_parallel") and len(targets) > 1
                     if use_parallel:
                         log.info("Ixigo fetch_offers: parallel (after P1), %d targets", len(targets))
                         pending_parallel = (targets, url)
                     else:
                         log.info("Ixigo fetch_offers (same session): %d targets", len(targets))
-                        offers_analysis = self._run_offer_loop(nova, targets, url)
+                        offers_analysis = self._run_offer_loop(nova, targets, url, on_progress=on_progress)
                         _backfill_booking_urls(results, offers_analysis)
                         telemetry = {"search_url": url, "timings_ms": {"total_ms": _elapsed_ms(overall_start)}}
                         filtered = _build_filtered_with_offers(results, offers_analysis, filters)

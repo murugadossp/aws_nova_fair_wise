@@ -149,8 +149,13 @@ Return ONLY this JSON structure:
 
             result = json.loads(response["body"].read())
             text   = result["output"]["message"]["content"][0]["text"].strip()
-            text   = re.sub(r"^```(?:json)?\n?", "", text)
-            text   = re.sub(r"\n?```$", "", text)
+            
+            # Robust JSON extraction
+            match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+            if match:
+                text = match.group(1).strip()
+            else:
+                text = text.strip()
 
             parsed = json.loads(text)
             winner = parsed.get("winner", {})
@@ -188,25 +193,40 @@ Return ONLY this JSON structure:
         """Same reasoning logic but for flight results."""
         # Build offer context
         platform_offers = {}
+        all_platform_offers = {}
+        all_card_ids = list(self._card_offers.keys())
         for f in flights:
             platform = f.get("platform", "")
             platform_offers[platform] = self._get_offers_for_cards(selected_cards, platform)
+            all_platform_offers[platform] = self._get_offers_for_cards(all_card_ids, platform)
 
         prompt = f"""Evaluate the cheapest flight booking option after card offers.
 
 Flight options:
 {json.dumps(flights, indent=2)}
 
-Bank card offers:
+User's Bank card offers:
 {json.dumps(platform_offers, indent=2)}
+
+ALL available Bank card offers:
+{json.dumps(all_platform_offers, indent=2)}
+
+Calculate two things:
+1. The winner using ONLY the "User's Bank card offers".
+2. The absolute lowest price winner using "ALL available Bank card offers".
+
+BASELINE PRICE CALCULATION:
+- If a flight has `offers.best_price_after_coupon`, use it as your STARTING BASELINE for applying bank card discounts.
+- If not, use the `price` field as your baseline.
+- Bank card discounts are usually subtracted from this baseline.
+- If multiple discounts (coupon + card) don't stack, pick the best one.
 
 Return ONLY this JSON:
 {{
   "winner": {{
     "platform": "string",
-    "price_raw": 0,
-    "price_effective": 0,
-    "saving_vs_max": 0,
+    "price_raw": 0, // This must be the original flight's `price` field
+    "price_effective": 0, // This must be the final price after ALL discounts (coupons + cards)
     "saving_percentage": 0.0,
     "card_used": "string or null",
     "card_benefit": "string",
@@ -215,13 +235,26 @@ Return ONLY this JSON:
       "airline": "string",
       "departure": "HH:MM",
       "arrival": "HH:MM",
-      "duration": "Xh Ym",
+      "duration": "string",
       "stops": 0
     }}
   }},
-  "all_results": [...],
-  "reasoning": "2-3 sentence explanation"
-}}"""
+  "all_results": [
+    {{
+      "platform": "string",
+      "flight_number": "string",
+      "price_raw": 0,
+      "price_effective": 0,
+      "saving": 0,
+      "card_used": "string or null",
+      "rank": 1
+    }}
+  ],
+  "reasoning_user": "2-3 sentence explanation of the best deal with the user's cards.",
+  "reasoning_friend": "A comical 1-2 sentence suggestion to ask a friend/family member for a specific card to get the absolute lowest price (if the user doesn't have the best card). If the user already has the best card, return null."
+}}
+IMPORTANT: ALL fields in `all_results` MUST be populated. DO NOT omit `flight_number` as it is used for mapping.
+IMPORTANT: DO NOT truncate the `all_results` list. You MUST return an item in `all_results` for EVERY SINGLE flight provided in the input. The length of `all_results` MUST exactly match the length of `Flight options`."""
 
         try:
             body = {
@@ -240,8 +273,13 @@ Return ONLY this JSON:
 
             result = json.loads(response["body"].read())
             text   = result["output"]["message"]["content"][0]["text"].strip()
-            text   = re.sub(r"^```(?:json)?\n?", "", text)
-            text   = re.sub(r"\n?```$", "", text)
+            
+            # Robust JSON extraction
+            match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+            if match:
+                text = match.group(1).strip()
+            else:
+                text = text.strip()
 
             return {"success": True, **json.loads(text)}
 
@@ -249,5 +287,6 @@ Return ONLY this JSON:
             if flights:
                 best = min(flights, key=lambda f: f.get("price", float("inf")))
                 return {"success": True, "winner": best, "all_results": flights,
-                        "reasoning": f"Showing lowest raw price (reasoning error: {e})"}
+                        "reasoning_user": f"Showing lowest raw price (reasoning error: {e})",
+                        "reasoning_friend": None}
             return {"success": False, "error": str(e)}

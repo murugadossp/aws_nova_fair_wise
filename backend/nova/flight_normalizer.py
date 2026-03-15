@@ -39,6 +39,8 @@ CANONICAL_FIELDS = [
     "to_city",        # "Delhi"
     "date",           # "YYYY-MM-DD"
     "travel_class",   # "economy"
+    "fare_details",
+    "fare_breakdown",
 ]
 
 
@@ -101,6 +103,10 @@ def _to_canonical(raw: dict) -> Optional[dict]:
         "to_city":       str(raw.get("to_city", "")).strip(),
         "date":          str(raw.get("date", "")).strip(),
         "travel_class":  str(raw.get("class", raw.get("travel_class", "economy"))).strip(),
+        "offers":        raw.get("offers"),
+        "price_effective": raw.get("price_effective"),
+        "fare_details":  raw.get("fare_details"),
+        "fare_breakdown": raw.get("fare_breakdown"),
     }
 
 
@@ -121,11 +127,8 @@ def _apply_filters(flights: list[dict], filters: dict) -> list[dict]:
     max_stops = filters.get("max_stops")
     if max_stops is not None:
         filtered = [f for f in result if f.get("stops", 99) <= max_stops]
-        if filtered:
-            log.info("Filter max_stops=%d: %d → %d flights", max_stops, len(result), len(filtered))
-            result = filtered
-        else:
-            log.warning("No flights with stops<=%d; ignoring max_stops filter", max_stops)
+        log.info("Filter max_stops=%d: %d → %d flights", max_stops, len(result), len(filtered))
+        result = filtered
 
     # ── departure_window ──────────────────────────────────────────────────────
     window = filters.get("departure_window")
@@ -138,17 +141,11 @@ def _apply_filters(flights: list[dict], filters: dict) -> list[dict]:
                 if (dep := _parse_hhmm(f.get("departure", ""))) is not None
                 and lo <= dep <= hi
             ]
-            if filtered:
-                log.info(
-                    "Filter departure_window %s–%s: %d → %d flights",
-                    window[0], window[1], len(result), len(filtered),
-                )
-                result = filtered
-            else:
-                log.warning(
-                    "No flights in departure window %s–%s; ignoring filter",
-                    window[0], window[1],
-                )
+            log.info(
+                "Filter departure_window %s–%s: %d → %d flights",
+                window[0], window[1], len(result), len(filtered),
+            )
+            result = filtered
 
     # ── arrival_window ────────────────────────────────────────────────────────
     arr_window = filters.get("arrival_window")
@@ -161,17 +158,11 @@ def _apply_filters(flights: list[dict], filters: dict) -> list[dict]:
                 if (arr := _parse_hhmm(f.get("arrival", ""))) is not None
                 and lo <= arr <= hi
             ]
-            if filtered:
-                log.info(
-                    "Filter arrival_window %s–%s: %d → %d flights",
-                    arr_window[0], arr_window[1], len(result), len(filtered),
-                )
-                result = filtered
-            else:
-                log.warning(
-                    "No flights in arrival window %s–%s; ignoring filter",
-                    arr_window[0], arr_window[1],
-                )
+            log.info(
+                "Filter arrival_window %s–%s: %d → %d flights",
+                arr_window[0], arr_window[1], len(result), len(filtered),
+            )
+            result = filtered
 
     return result
 
@@ -242,7 +233,13 @@ class FlightNormalizer:
         elif sort_by == "duration":
             deduped.sort(key=lambda f: f.get("duration", ""))
         else:
-            deduped.sort(key=lambda f: f["price"])
+            # Sort primarily by price, then by departure time
+            deduped.sort(key=lambda f: (f.get("price", float('inf')), _parse_hhmm(f.get("departure", "")) or 9999))
+
+        # ── 5. Cap results to top 5 ───────────────────────────────────────────
+        if len(deduped) > 5:
+            log.info("Capping normalized results to top 5 (was %d)", len(deduped))
+            deduped = deduped[:5]
 
         log.info("FlightNormalizer: %d final flights (from %d raw)", len(deduped), len(raw_results))
         return deduped

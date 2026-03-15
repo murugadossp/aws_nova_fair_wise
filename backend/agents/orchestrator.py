@@ -381,12 +381,16 @@ class TravelOrchestrator:
                 effective_price_key(flights[2]) if len(flights) > 2 else 0,
             )
 
+            # Determine how many flights to send to Nova Pro for ranking
+            top_n_for_reasoning = min(5, len(flights))
+
+            # Send UI update: show re-ranking in progress
+            await self._send({"type": "progress", "step": "reranking",
+                               "message": f"Re-ranking top {top_n_for_reasoning} by best deals (after coupons)…"})
+
             # ── Step 4: Rank — Nova Pro applies card offers, picks winner ─────
             await self._send({"type": "progress", "step": "ranking",
-                               "message": "Nova Pro calculating best fare with card discounts…"})
-
-            # Send top 5 flights (by effective price, not raw price) to Nova Pro
-            top_n_for_reasoning = min(5, len(flights))
+                               "message": "Applying card discounts to find your best deal…"})
             deal = await self.reasoner.calculate_best_flight(
                 flights=flights[:top_n_for_reasoning],  # Top 5 by effective price (coupon-adjusted)
                 selected_cards=cards,
