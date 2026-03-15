@@ -57,6 +57,8 @@ async def get_sessions() -> List[Dict[str, Any]]:
                 print(f"Error reading metadata from {metadata_file}: {e}")
                 continue
 
+    # Sort newest first by timestamp_start
+    sessions.sort(key=lambda s: s.get("timestamp_start") or "", reverse=True)
     return sessions
 
 

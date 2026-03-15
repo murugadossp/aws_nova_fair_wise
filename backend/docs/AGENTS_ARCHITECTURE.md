@@ -227,6 +227,86 @@ All travel agents always return a **list** of flight dicts. Each dict contains a
 - **`nova_auth.py`** — `get_or_create_workflow_definition(name)`. Checks if a Nova Act workflow definition exists in AWS and creates it if not. In-memory cache avoids repeat AWS API calls within the same process. Called at the start of every `search()` in IAM mode.
 - **`agents/orchestrator.py`** — `TravelOrchestrator` reads `plan["route"]` and `plan["filters"]` from the planner output, dispatches to agents in parallel via `ThreadPoolExecutor`, collects results, then passes the combined list and `filters` to `FlightNormalizer`. All agents return a flat `list[dict]`.
 - **`nova/flight_normalizer.py`** — `FlightNormalizer.normalize(flights, filters)`. Pure Python: dedup by `(airline, flight_number, departure)`, apply `filters["max_stops"]`, apply `filters["departure_window"]`, sort by `filters["sort_by"]`. No model call.
+- **`nova/reasoner.py`** — `NovaReasoner.calculate_best_flight(flights, selected_cards)`. Two-step: (A) Python pre-ranking via `_baseline_price()` + `_build_all_results()` assigns deterministic ranks 1..N; (B) LLM receives only rank-1 flight + its platform's card offers and returns best card benefit. See [FLIGHT_DATA_FLOW.md](../FLIGHT_DATA_FLOW.md#4-final-reasoning-nova-pro--python-pre-ranking--card-benefit).
+
+---
+
+## Nova Act error handling patterns
+
+### `_act_with_retry()` — ActInvalidModelGenerationError recovery
+
+`ActInvalidModelGenerationError` is raised when Nova Act generates a zero-height bounding box for a click target (e.g., `<box>389,756,414,756</box>`). Root cause: a popup appears mid-step and obscures the intended element, causing the model to target the overlay instead.
+
+**Pattern (implement in each agent's `agent.py`):**
+
+```python
+from nova_act import ActInvalidModelGenerationError
+
+def _act_with_retry(nova, instruction: str, *, max_retries: int = 1, **kwargs):
+    for attempt in range(max_retries + 1):
+        try:
+            return nova.act(instruction, **kwargs)
+        except ActInvalidModelGenerationError as e:
+            if attempt >= max_retries:
+                raise
+            log.warning(
+                "ActInvalidModelGenerationError (attempt %d/%d) — dismissing popups and retrying: %s",
+                attempt + 1, max_retries + 1, e,
+            )
+            _playwright_dismiss_popups(nova)
+            sleep(1)
+```
+
+Replace every `nova.act(...)` call inside extraction and offer loops with `_act_with_retry(nova, ...)`. The `**kwargs` pass-through preserves `schema=`, `max_steps=`, and other arguments unchanged.
+
+**Reference implementation:** `agents/ixigo/agent.py` — all `nova.act()` calls inside `_do_extraction()`, `book_then_continue`, and `extract_coupons_from_booking_page` use `_act_with_retry`.
+
+---
+
+## Phase 3 patterns
+
+### book_url deduplication (prevents session collision)
+
+Two flights from the same airline can share an identical `book_url` on the search results page (e.g., both point to the same Ixigo booking URL). When dispatched in parallel, both sessions navigate to the same page — one flight target is never analyzed, and the second slot's fare data actually belongs to the first slot.
+
+**Pattern — apply before `asyncio.gather()` in `_run_offer_loop_parallel()`:**
+
+```python
+seen_urls: set[str] = set()
+targets = [dict(t) for t in targets]          # shallow copy — don't mutate caller's list
+for t in targets:
+    bu = (t.get("book_url") or t.get("booking_url") or "").strip()
+    if bu:
+        if bu in seen_urls:
+            log.warning(
+                "Duplicate book_url for %s %s — clearing to force search-page navigation",
+                t.get("airline", "?"), t.get("flight_number", "?"),
+            )
+            t.pop("book_url", None)
+            t.pop("booking_url", None)
+        else:
+            seen_urls.add(bu)
+```
+
+When a target has no `book_url`, the agent falls back to navigating to the search page and locating the flight by airline/flight_number. This is slower but produces correct results.
+
+**Reference implementation:** `agents/ixigo/agent.py` — `_run_offer_loop_parallel()`.
+
+---
+
+## IndiGo flight number rules
+
+IndiGo operates both **3-digit** (e.g., 6E189, 6E796) and **4-digit** (e.g., 6E6081) flight numbers. Only flight numbers with ≤2 digits after `6E` are definitively OCR truncation noise.
+
+**In `FlightNormalizer._normalize_flight_number()`:**
+- `len(digits) <= 2` → log WARNING (OCR noise)
+- `len(digits) == 3` → valid scheduled flight, no warning
+- `len(digits) == 4` → standard IndiGo 4-digit, no warning
+- `len(digits) > 4` → trim to 4 digits
+
+**In session analysis (`prompts/session_analysis_prompt.md`):**
+- CHECK-5 only flags ≤2 digits. 3-digit IndiGo numbers are noted as valid and marked ✅.
+- Deduction guide: OCR penalty only for confirmed ≤2-digit truncation, never for 3-digit numbers.
 
 ---
 
@@ -245,15 +325,31 @@ The test helper `validate_flight_schema(flights, search_date)` centralizes these
 
 ## Adding a new travel agent
 
+> **Reference implementation:** Use `agents/ixigo/agent.py` as the canonical template — it has the most complete and up-to-date implementation including `_act_with_retry`, book_url deduplication, `_playwright_dismiss_popups`, and the full Phase 3 parallel offer loop.
+
 1. Create a package under `agents/`, e.g. `agents/newsite/`.
 2. Add **`config.yaml`** with `workflow_name`, `base_url`, `city_codes`, `max_steps_default`, and `steps` (at least `wait` + `extraction` with `instruction_file` and `schema`). Add `class_codes` if the site's URL uses a cabin-class code parameter (like Ixigo, MakeMyTrip). Use `required` + `additionalProperties: false` in extraction schema for strict validation.
 3. Add **`agent.py`** with:
-   - `_filters_to_criteria(filters: dict | None) -> str` static method (copy pattern from Ixigo/MakeMyTrip)
+   - `_filters_to_criteria(filters: dict | None) -> str` static method (copy pattern from IxigoAgent)
    - `search(from_city, to_city, date, travel_class=”economy”, filters=None)` signature
    - Pop `NOVA_ACT_API_KEY`, call `get_or_create_workflow_definition(workflow_name)`, run `Workflow`/`NovaAct`
+   - **`_act_with_retry(nova, instruction, *, max_retries=1, **kwargs)`** — module-level helper (copy from Ixigo); use this instead of bare `nova.act()` everywhere
+   - **`_playwright_dismiss_popups(nova)`** — dismisses overlays before retry; copy from Ixigo
+   - **book_url deduplication** — in `_run_offer_loop_parallel()`, clear duplicate `book_url` before parallel dispatch (see [Phase 3 patterns](#phase-3-patterns) above)
    - On exception: `return ActExceptionHandler.handle(e, “NewSite”, context)`
 4. Add **`__init__.py`** with `from .agent import NewSiteAgent` and `__all__ = [“NewSiteAgent”]`.
 5. Add the agent key to `_TRAVEL_AGENTS` in `agents/orchestrator.py`.
-6. Add a test file `tests/test_newsite_agent.py` (copy pattern from `test_cleartrip_agent.py` or `test_ixigo_agent.py`) and call `validate_flight_schema` (or an equivalent validator) on the returned flights so schema and URL checks are enforced.
+6. Add a test file `tests/test_newsite_agent.py` (copy pattern from `test_ixigo_agent.py`) and call `validate_flight_schema` (or an equivalent validator) on the returned flights so schema and URL checks are enforced.
 
 No changes to a central “config loader” are required; each agent reads its own `config.yaml` from its package directory.
+
+### Phase 3 offer loop checklist (for new agents)
+
+| # | Requirement | Why |
+|---|-------------|-----|
+| 1 | `targets = filtered[:offers_top_n]` | Cap parallel sessions |
+| 2 | book_url dedup before `asyncio.gather()` | Prevent same-page collision (CHECK-7b) |
+| 3 | Use `_act_with_retry` for all `nova.act()` | Recover from `ActInvalidModelGenerationError` popup interference |
+| 4 | Log `”Offers [N/N]: N coupons extracted”` on success | Session analysis prompt maps these to flights |
+| 5 | Log `”Offers [N/N]: failed for ...”` on failure | Session analysis tracks failure rate |
+| 6 | Return `offers.best_price_after_coupon` | Used by `NovaReasoner._baseline_price()` for accurate ranking |

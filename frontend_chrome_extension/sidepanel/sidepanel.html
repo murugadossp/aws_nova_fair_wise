@@ -277,24 +277,24 @@
       align-items: center;
       gap: 6px;
       font-weight: 600;
-      font-size: 13px;
+      font-size: 15px;
     }
     .dot { width: 8px; height: 8px; border-radius: 50%; }
-    
+
     .phase-container {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 5px;
     }
     .phase {
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 12px;
+      font-size: 14px;
       color: var(--t3);
     }
     .phase-icon {
-      font-size: 10px;
+      font-size: 12px;
     }
     .phase.active { color: var(--blue); font-weight: 500; }
     .phase.done { color: var(--green); }
@@ -658,7 +658,7 @@
             <div class="agent-brand">
               <div class="dot" style="background:var(--cleartrip)"></div> Cleartrip
             </div>
-            <span style="font-size:10px;color:var(--t3)" id="count-cleartrip">Pending</span>
+            <span style="font-size:13px;color:var(--t3)" id="count-cleartrip">Pending</span>
           </div>
           <div class="phase-container">
             <div class="phase" id="phase1-cleartrip"><span class="phase-icon">○</span> Phase 1: Search & Extract</div>
@@ -673,7 +673,7 @@
             <div class="agent-brand">
               <div class="dot" style="background:var(--ixigo)"></div> Ixigo
             </div>
-            <span style="font-size:10px;color:var(--t3)" id="count-ixigo">Pending</span>
+            <span style="font-size:13px;color:var(--t3)" id="count-ixigo">Pending</span>
           </div>
           <div class="phase-container">
             <div class="phase" id="phase1-ixigo"><span class="phase-icon">○</span> Phase 1: Search & Extract</div>
@@ -873,8 +873,11 @@
       document.getElementById('main-spinner').classList.remove('hidden');
       document.getElementById('progress-main-text').textContent = "Parsing request with Nova Lite...";
       
-      resetAgentTracker('cleartrip');
-      resetAgentTracker('ixigo');
+      ['cleartrip', 'ixigo', 'makemytrip'].forEach(a => {
+        const el = document.getElementById(`tracker-${a}`);
+        if (el) el.style.display = 'none';  // hide all; plan message reveals only active agents
+        resetAgentTracker(a);
+      });
       
       if (state.ws) { try { state.ws.close(); } catch(e){} }
       
@@ -913,6 +916,15 @@
     // Timer state for each agent
     const agentTimers = {};
     const agentIntervals = {};
+    // Phase timestamps: agent → { p1Start, p1End, p3Start, p3End }
+    const phaseTimestamps = {};
+
+    function _fmtDuration(secs) {
+      if (secs === null || secs === undefined) return '';
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    }
 
     // Track which flights are being analyzed for coupons (from backend config)
     // Format: Set of "platform-flight_number" strings
@@ -943,6 +955,7 @@
     function resetAgentTracker(agent) {
       let tracker = document.getElementById(`tracker-${agent}`);
       if (!tracker) return; // skip if agent not in UI initially
+      delete phaseTimestamps[agent];
       document.getElementById(`count-${agent}`).textContent = 'Pending';
       document.getElementById(`count-${agent}`).style.color = 'var(--t3)';
       document.getElementById(`phase1-${agent}`).className = 'phase';
@@ -953,7 +966,7 @@
       stopAgentTimer(agent);
       let timerEl = document.getElementById(`timer-${agent}`);
       if (!timerEl) {
-        document.getElementById(`count-${agent}`).insertAdjacentHTML('beforebegin', `<span id="timer-${agent}" style="font-size:10px;color:var(--t3);margin-right:8px;font-family:monospace">00:00</span>`);
+        document.getElementById(`count-${agent}`).insertAdjacentHTML('beforebegin', `<span id="timer-${agent}" style="font-size:12px;color:var(--t3);margin-right:8px;font-family:monospace">00:00</span>`);
       } else {
         timerEl.textContent = '00:00';
       }
@@ -961,6 +974,7 @@
     
     function setPhaseActive(agent, phaseNum) {
       if (phaseNum === 1) {
+        phaseTimestamps[agent] = { p1Start: Date.now() };
         startAgentTimer(agent);
         document.getElementById(`count-${agent}`).textContent = 'Extracting...';
         document.getElementById(`count-${agent}`).style.color = 'var(--blue)';
@@ -968,8 +982,14 @@
         document.getElementById(`phase1-${agent}`).innerHTML = '<span class="phase-icon spinner" style="width:10px;height:10px;border-width:1.5px;display:inline-block"></span> Phase 1: Search & Extract';
         document.getElementById(`prog-${agent}`).style.width = '30%';
       } else if (phaseNum === 2) {
+        const now = Date.now();
+        const ts = phaseTimestamps[agent] || {};
+        ts.p1End = now; ts.p3Start = now;
+        phaseTimestamps[agent] = ts;
+        const p1Secs = ts.p1Start ? Math.round((now - ts.p1Start) / 1000) : null;
+        const p1Time = p1Secs !== null ? ` <span style="color:var(--gold);font-size:12px;font-weight:600">— ${_fmtDuration(p1Secs)}</span>` : '';
         document.getElementById(`phase1-${agent}`).className = 'phase done';
-        document.getElementById(`phase1-${agent}`).innerHTML = '<span class="phase-icon">✓</span> Phase 1: Search & Extract';
+        document.getElementById(`phase1-${agent}`).innerHTML = `<span class="phase-icon">✓</span> Phase 1: Search & Extract${p1Time}`;
         document.getElementById(`phase2-${agent}`).className = 'phase active';
         document.getElementById(`phase2-${agent}`).innerHTML = '<span class="phase-icon spinner" style="width:10px;height:10px;border-width:1.5px;display:inline-block"></span> Phase 2: Analyze Offers';
         document.getElementById(`count-${agent}`).textContent = 'Analyzing...';
@@ -978,14 +998,28 @@
     }
     
     function setAgentDone(agent, count) {
+      const now = Date.now();
+      const ts = phaseTimestamps[agent] || {};
+      ts.p3End = now;
+      const p1Secs = (ts.p1Start && ts.p1End) ? Math.round((ts.p1End - ts.p1Start) / 1000) : null;
+      const p3Secs = (ts.p3Start && ts.p3End) ? Math.round((ts.p3End - ts.p3Start) / 1000) : null;
+      const totalSecs = ts.p1Start ? Math.round((now - ts.p1Start) / 1000) : null;
+      const p1Time = p1Secs !== null ? ` <span style="color:var(--gold);font-size:12px;font-weight:600">— ${_fmtDuration(p1Secs)}</span>` : '';
+      const p3Time = p3Secs !== null ? ` <span style="color:var(--gold);font-size:12px;font-weight:600">— ${_fmtDuration(p3Secs)}</span>` : '';
       stopAgentTimer(agent);
       document.getElementById(`phase1-${agent}`).className = 'phase done';
-      document.getElementById(`phase1-${agent}`).innerHTML = '<span class="phase-icon">✓</span> Phase 1: Search & Extract';
+      document.getElementById(`phase1-${agent}`).innerHTML = `<span class="phase-icon">✓</span> Phase 1: Search & Extract${p1Time}`;
       document.getElementById(`phase2-${agent}`).className = 'phase done';
-      document.getElementById(`phase2-${agent}`).innerHTML = '<span class="phase-icon">✓</span> Phase 2: Analyze Offers';
+      document.getElementById(`phase2-${agent}`).innerHTML = `<span class="phase-icon">✓</span> Phase 2: Analyze Offers${p3Time}`;
       document.getElementById(`count-${agent}`).textContent = `${count} found`;
       document.getElementById(`count-${agent}`).style.color = 'var(--green)';
       document.getElementById(`prog-${agent}`).style.width = '100%';
+      const timerEl = document.getElementById(`timer-${agent}`);
+      if (timerEl && totalSecs !== null) {
+        timerEl.textContent = `${_fmtDuration(totalSecs)} total`;
+        timerEl.style.color = 'var(--gold)';
+        timerEl.style.fontWeight = '600';
+      }
     }
 
     function handleMessage(msg) {
@@ -1005,10 +1039,10 @@
         setAgentDone(msg.agent, msg.count || 0);
       }
       else if (msg.type === 'results') {
-        document.getElementById('progress-main-text').textContent = "Done!";
+        document.getElementById('progress-main-text').textContent = "✅ Search Complete — scroll down for results";
         document.getElementById('main-spinner').classList.add('hidden');
         renderResults(msg);
-        setTimeout(() => document.getElementById('progress-panel').classList.remove('show'), 2000);
+        // Keep progress panel visible so extraction details remain readable
       }
       else if (msg.type === 'coupon_analysis_scope') {
         // Backend tells frontend which flights are being analyzed for coupons
@@ -1174,7 +1208,7 @@
       if (!planDiv) {
         planDiv = document.createElement('div');
         planDiv.id = 'plan-info-block';
-        planDiv.style.cssText = 'background: rgba(99,102,241,0.05); border: 1px solid var(--blue-border); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 11px;';
+        planDiv.style.cssText = 'background: rgba(99,102,241,0.05); border: 1px solid var(--blue-border); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px;';
         
         // Find where to insert it (just after the main "Searching..." header)
         const header = container.querySelector('.progress-header');
@@ -1197,6 +1231,13 @@
         </div>
         ${filterLabels ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--blue-glow);"><span style="color:var(--t3); margin-right: 4px;">Filters:</span> ${filterLabels}</div>` : ''}
       `;
+
+      // Show only trackers for agents that are actually running; hide the rest
+      const activeAgents = planMsg.agents || [];
+      ['cleartrip', 'ixigo', 'makemytrip'].forEach(agent => {
+        const el = document.getElementById(`tracker-${agent}`);
+        if (el) el.style.display = activeAgents.includes(agent) ? '' : 'none';
+      });
     }
 
     function renderRawData(agent, data) {

@@ -185,13 +185,52 @@ Return ONLY this JSON structure:
                 }
             return {"success": False, "error": str(e)}
 
+    @staticmethod
+    def _baseline_price(flight: dict) -> int:
+        """Python-computed effective price: best_price_after_coupon → final_price → raw price."""
+        bpac = (flight.get("offers") or {}).get("best_price_after_coupon")
+        if bpac is not None:
+            return int(bpac)
+        fp = (flight.get("offers") or {}).get("fare_details", {}).get("final_price")
+        if fp is not None:
+            return int(fp)
+        return int(flight.get("price") or 0)
+
+    def _build_all_results(self, flights: list[dict]) -> list[dict]:
+        """Pre-rank all flights by baseline price in Python. Returns sorted all_results list."""
+        ranked = sorted(flights, key=self._baseline_price)
+        results = []
+        for rank, f in enumerate(ranked, start=1):
+            baseline = self._baseline_price(f)
+            raw = int(f.get("price") or 0)
+            results.append({
+                "platform":       f.get("platform", ""),
+                "flight_number":  f.get("flight_number", ""),
+                "price_raw":      raw,
+                "price_effective": baseline,
+                "saving":         max(0, raw - baseline),
+                "card_used":      None,
+                "rank":           rank,
+            })
+        return results
+
     async def calculate_best_flight(
         self,
         flights: list[dict],
         selected_cards: list[str],
     ) -> dict:
-        """Same reasoning logic but for flight results."""
-        log.info("NovaReasoner Phase 4: calculating best flight across %d options, cards=%s",
+        """
+        Phase 4 reasoning — two-step approach:
+
+        Step A (Python): Pre-rank all flights by best_price_after_coupon.
+                         Build all_results with deterministic ranks 1..N.
+        Step B (LLM):    Send ONLY rank-1 flight + its platform card offers.
+                         Ask: can any card reduce the price further?
+
+        Eliminates LLM ranking errors (CHECK-1 failures) entirely.
+        LLM token input shrinks from N flights × full JSON to 1 flight × 1 platform.
+        """
+        log.info("NovaReasoner Phase 4: pre-ranking %d flights, cards=%s",
                  len(flights), selected_cards)
         for i, f in enumerate(flights):
             log.info("  [%d] %s %s  dep=%s arr=%s  price=₹%s  coupons=%d",
@@ -201,83 +240,60 @@ Return ONLY this JSON structure:
                      f.get("price", "?"),
                      len((f.get("offers") or {}).get("coupons") or []))
 
-        # Build offer context
-        platform_offers = {}
-        all_platform_offers = {}
+        # ── Step A: Python pre-ranking ────────────────────────────────────────
+        all_results = self._build_all_results(flights)
+        rank1_entry  = all_results[0]
+        rank1_fn     = rank1_entry["flight_number"]
+        rank1_flight = next((f for f in flights if f.get("flight_number") == rank1_fn), flights[0])
+        rank1_baseline = rank1_entry["price_effective"]
+
+        log.info("NovaReasoner Phase 4: rank-1 = %s ₹%s (Python pre-ranked)",
+                 rank1_fn, rank1_baseline)
+        for r in all_results:
+            log.info("  rank=%s  %s  raw=₹%s  effective=₹%s  saving=₹%s  card=%s",
+                     r["rank"], r["flight_number"],
+                     r["price_raw"], r["price_effective"], r["saving"], r["card_used"])
+
+        # ── Step B: LLM — card benefit for rank-1 only ───────────────────────
+        platform     = rank1_flight.get("platform", "")
         all_card_ids = list(self._card_offers.keys())
-        for f in flights:
-            platform = f.get("platform", "")
-            platform_offers[platform] = self._get_offers_for_cards(selected_cards, platform)
-            all_platform_offers[platform] = self._get_offers_for_cards(all_card_ids, platform)
+        user_card_offers = self._get_offers_for_cards(selected_cards, platform)
+        all_card_offers  = self._get_offers_for_cards(all_card_ids, platform)
 
-        prompt = f"""Evaluate the cheapest flight booking option after card offers.
+        prompt = f"""You are calculating the best bank card discount for ONE pre-selected winning flight.
 
-Flight options:
-{json.dumps(flights, indent=2)}
+Winning flight (rank 1 — cheapest after site coupons, pre-ranked by Python):
+{json.dumps(rank1_flight, indent=2)}
 
-User's Bank card offers:
-{json.dumps(platform_offers, indent=2)}
+Baseline price: ₹{rank1_baseline}
+(This is best_price_after_coupon — already includes site coupon + convenience fee. Do NOT add any fees.)
 
-ALL available Bank card offers:
-{json.dumps(all_platform_offers, indent=2)}
+User's bank card offers for {platform}:
+{json.dumps(user_card_offers, indent=2)}
 
-Calculate two things:
-1. The winner using ONLY the "User's Bank card offers".
-2. The absolute lowest price winner using "ALL available Bank card offers".
+ALL available bank card offers for {platform}:
+{json.dumps(all_card_offers, indent=2)}
 
-BASELINE PRICE CALCULATION — follow these rules exactly:
-1. If a flight has `offers.best_price_after_coupon` (not null), use it as the STARTING BASELINE. This value already includes the convenience fee and the best site coupon discount.
-2. If `offers.best_price_after_coupon` is null, use `offers.fare_details.final_price` as the baseline (booking-page total including convenience fee).
-3. If neither is available, use `price` as a last resort.
-4. CRITICAL: NEVER add `fare_details.convenience_fee` to any baseline — it is already included in `best_price_after_coupon` and `fare_details.final_price`. Adding it would double-count it.
-5. Bank card discounts are subtracted from the chosen baseline. If coupon + card don't stack, pick the best single discount.
-
-RANKING RULES:
-- `rank` 1 = lowest `price_effective` (best deal). Higher ranks = worse deals.
-- ALL items in `all_results` must be sorted strictly ascending by `price_effective` before assigning ranks.
-- Never assign a higher rank number (e.g. rank=2) to a flight with lower `price_effective` than a flight with a lower rank number (e.g. rank=3).
+Task: check if any of the user's bank cards reduces the baseline by a card discount.
+Subtract the best applicable card discount from ₹{rank1_baseline} to get price_effective.
+If no card applies, price_effective = ₹{rank1_baseline} and card_used = null.
 
 Return ONLY this JSON:
 {{
-  "winner": {{
-    "platform": "string",
-    "price_raw": 0, // This must be the original flight's `price` field
-    "price_effective": 0, // This must be the final price after ALL discounts (coupons + cards)
-    "saving_percentage": 0.0,
-    "card_used": "string or null",
-    "card_benefit": "string",
-    "book_url": "url",
-    "flight_details": {{
-      "airline": "string",
-      "departure": "HH:MM",
-      "arrival": "HH:MM",
-      "duration": "string",
-      "stops": 0
-    }}
-  }},
-  "all_results": [
-    {{
-      "platform": "string",
-      "flight_number": "string",
-      "price_raw": 0,
-      "price_effective": 0,
-      "saving": 0,
-      "card_used": "string or null",
-      "rank": 1
-    }}
-  ],
+  "price_effective": 0,
+  "saving_percentage": 0.0,
+  "card_used": "card name or null",
+  "card_benefit": "description of the offer applied, or 'No card benefit applicable'",
   "reasoning_user": "2-3 sentence explanation of the best deal with the user's cards.",
-  "reasoning_friend": "A comical 1-2 sentence suggestion to ask a friend/family member for a specific card to get the absolute lowest price (if the user doesn't have the best card). If the user already has the best card, return null."
-}}
-IMPORTANT: ALL fields in `all_results` MUST be populated. DO NOT omit `flight_number` as it is used for mapping.
-IMPORTANT: DO NOT truncate the `all_results` list. You MUST return an item in `all_results` for EVERY SINGLE flight provided in the input. The length of `all_results` MUST exactly match the length of `Flight options`."""
+  "reasoning_friend": "ONLY if a card from ALL available offers (not the user's cards) gives a strictly lower price than the user's best result: name that exact card and the saving. If no such improvement exists in the data provided, return null. NEVER invent or mention any card not listed above."
+}}"""
 
         try:
             body = {
                 "schemaVersion": "messages-v1",
                 "system": [{"text": self.SYSTEM_PROMPT}],
                 "messages": [{"role": "user", "content": [{"text": prompt}]}],
-                "inferenceConfig": {"maxTokens": 1024, "temperature": 0.1},
+                "inferenceConfig": {"maxTokens": 512, "temperature": 0.1},
             }
 
             response = self.client.invoke_model(
@@ -289,34 +305,73 @@ IMPORTANT: DO NOT truncate the `all_results` list. You MUST return an item in `a
 
             result = json.loads(response["body"].read())
             text   = result["output"]["message"]["content"][0]["text"].strip()
-            
-            # Robust JSON extraction
-            match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
-            if match:
-                text = match.group(1).strip()
-            else:
-                text = text.strip()
 
-            parsed = json.loads(text)
-            winner = parsed.get("winner", {})
+            match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+            text  = match.group(1).strip() if match else text.strip()
+            llm   = json.loads(text)
+
+            # Safety: LLM must not return a price higher than baseline
+            price_effective = min(int(llm.get("price_effective") or rank1_baseline), rank1_baseline)
+
+            # Patch rank-1 entry with card-adjusted price
+            all_results[0]["price_effective"] = price_effective
+            all_results[0]["saving"]          = max(0, rank1_entry["price_raw"] - price_effective)
+            all_results[0]["card_used"]        = llm.get("card_used")
+
+            winner = {
+                "platform":          rank1_flight.get("platform", ""),
+                "price_raw":         rank1_entry["price_raw"],
+                "price_effective":   price_effective,
+                "saving_percentage": llm.get("saving_percentage", 0.0),
+                "card_used":         llm.get("card_used"),
+                "card_benefit":      llm.get("card_benefit", ""),
+                "book_url":          (rank1_flight.get("offers") or {}).get("booking_url")
+                                     or rank1_flight.get("book_url") or rank1_flight.get("booking_url") or "",
+                "flight_details": {
+                    "airline":   rank1_flight.get("airline", ""),
+                    "departure": rank1_flight.get("departure", ""),
+                    "arrival":   rank1_flight.get("arrival", ""),
+                    "duration":  rank1_flight.get("duration", ""),
+                    "stops":     rank1_flight.get("stops", 0),
+                },
+            }
+
             log.info("NovaReasoner Phase 4 result: winner=%s %s  price_raw=₹%s  price_effective=₹%s  card='%s'",
-                     winner.get("flight_details", {}).get("airline", "?"),
-                     winner.get("flight_details", {}).get("departure", ""),
-                     winner.get("price_raw"), winner.get("price_effective"),
-                     winner.get("card_used"))
-            log.info("NovaReasoner reasoning: %s", parsed.get("reasoning_user", ""))
-            for r in parsed.get("all_results", []):
-                log.info("  rank=%s  %s  raw=₹%s  effective=₹%s  saving=₹%s  card=%s",
-                         r.get("rank"), r.get("flight_number"),
-                         r.get("price_raw"), r.get("price_effective"),
-                         r.get("saving"), r.get("card_used"))
-            return {"success": True, **parsed}
+                     winner["flight_details"]["airline"], winner["flight_details"]["departure"],
+                     winner["price_raw"], winner["price_effective"], winner["card_used"])
+            log.info("NovaReasoner reasoning: %s", llm.get("reasoning_user", ""))
+
+            return {
+                "success":          True,
+                "winner":           winner,
+                "all_results":      all_results,
+                "reasoning_user":   llm.get("reasoning_user", ""),
+                "reasoning_friend": llm.get("reasoning_friend"),
+            }
 
         except Exception as e:
-            log.error("NovaReasoner Phase 4 failed, falling back to min-price: %s", e)
-            if flights:
-                best = min(flights, key=lambda f: f.get("price", float("inf")))
-                return {"success": True, "winner": best, "all_results": flights,
-                        "reasoning_user": f"Showing lowest raw price (reasoning error: {e})",
-                        "reasoning_friend": None}
-            return {"success": False, "error": str(e)}
+            log.error("NovaReasoner Phase 4 failed, using pre-ranked result without card benefit: %s", e)
+            winner = {
+                "platform":          rank1_flight.get("platform", ""),
+                "price_raw":         rank1_entry["price_raw"],
+                "price_effective":   rank1_baseline,
+                "saving_percentage": 0.0,
+                "card_used":         None,
+                "card_benefit":      "Card offer data unavailable",
+                "book_url":          (rank1_flight.get("offers") or {}).get("booking_url")
+                                     or rank1_flight.get("book_url") or rank1_flight.get("booking_url") or "",
+                "flight_details": {
+                    "airline":   rank1_flight.get("airline", ""),
+                    "departure": rank1_flight.get("departure", ""),
+                    "arrival":   rank1_flight.get("arrival", ""),
+                    "duration":  rank1_flight.get("duration", ""),
+                    "stops":     rank1_flight.get("stops", 0),
+                },
+            }
+            return {
+                "success":          True,
+                "winner":           winner,
+                "all_results":      all_results,
+                "reasoning_user":   f"Showing cheapest flight by site coupon price (card reasoning unavailable: {e})",
+                "reasoning_friend": None,
+            }

@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from time import perf_counter, sleep
 
-from nova_act import ActGetResult, NovaAct, Workflow
+from nova_act import ActGetResult, ActInvalidModelGenerationError, NovaAct, Workflow
 
 from logger import get_logger
 from nova_auth import get_or_create_workflow_definition
@@ -259,6 +259,27 @@ def _playwright_dismiss_popups(nova) -> None:
 
 
 
+def _act_with_retry(nova, instruction: str, *, max_retries: int = 1, **kwargs):
+    """Wrap nova.act() with one retry on ActInvalidModelGenerationError.
+
+    This error typically occurs when a popup appears mid-step and the model
+    produces a zero-height bounding box for a click target.  Dismissing the
+    popup and retrying once usually recovers cleanly.
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            return nova.act(instruction, **kwargs)
+        except ActInvalidModelGenerationError as e:
+            if attempt >= max_retries:
+                raise
+            log.warning(
+                "ActInvalidModelGenerationError (attempt %d/%d) — dismissing popups and retrying: %s",
+                attempt + 1, max_retries + 1, e,
+            )
+            _playwright_dismiss_popups(nova)
+            sleep(1)
+
+
 def _wait_for_results(nova, url: str) -> None:
     """Navigate to search URL and wait for results to load."""
     nova.page.goto(url)
@@ -320,11 +341,12 @@ class IxigoAgent:
                     departure=departure,
                     price=str(price),
                 )
-                nova.act(instruction, max_steps=book_cfg.get("max_steps", 30))
+                _act_with_retry(nova, instruction, max_steps=book_cfg.get("max_steps", 30))
                 offer["booking_url"] = nova.page.url
                 log.info("Offers [%d/%d]: on booking page → %s", idx + 1, total, nova.page.url[:80])
 
-            out = nova.act(
+            out = _act_with_retry(
+                nova,
                 _sub(_get_instruction(coupons_cfg), airline=airline, flight_number=flight_number, price=str(price)),
                 max_steps=coupons_cfg.get("max_steps", 50),
                 schema=coupons_cfg.get("schema"),
@@ -373,10 +395,17 @@ class IxigoAgent:
             # Always set best_price_after_coupon so Nova Pro never falls back to
             # the raw Phase-1 price (which can be lower than the booking-page total
             # and causes the reasoner to add convenience_fee incorrectly).
-            if coupon_list and any(int(c.get("discount", 0) or 0) > 0 for c in coupon_list):
-                offer["best_price_after_coupon"] = min(c["price_after_coupon"] for c in coupon_list)
+            # Exclude "next booking" cashback coupons (e.g. MONEY) — they are future
+            # credits, not immediate price reductions on this booking.
+            immediate_coupons = [
+                c for c in coupon_list
+                if int(c.get("discount", 0) or 0) > 0
+                and "next booking" not in (c.get("description") or "").lower()
+            ]
+            if immediate_coupons:
+                offer["best_price_after_coupon"] = min(c["price_after_coupon"] for c in immediate_coupons)
             else:
-                # No effective coupon discount — use booking-page final price as baseline
+                # No effective immediate coupon discount — use booking-page final price as baseline
                 offer["best_price_after_coupon"] = final_price
             log.info("Offers [%d/%d]: %d coupons extracted", idx + 1, total, len(coupon_list))
         except Exception as e:
@@ -409,6 +438,25 @@ class IxigoAgent:
         coupons_cfg = _CONFIG["steps"].get("extract_coupons_from_booking_page")
         if not book_cfg or not coupons_cfg:
             return []
+
+        # Deduplicate book_url: if two targets share the same URL, the second session
+        # would land on the wrong booking page and silently extract the first flight's data.
+        # Clear book_url on duplicates so they fall back to Nova Act navigation by flight name.
+        seen_urls: set[str] = set()
+        targets = [dict(t) for t in targets]  # shallow copy so we don't mutate caller's list
+        for t in targets:
+            bu = (t.get("book_url") or t.get("booking_url") or "").strip()
+            if bu:
+                if bu in seen_urls:
+                    log.warning(
+                        "Ixigo P3: duplicate book_url for %s %s — clearing to force search-page navigation",
+                        t.get("airline", ""), t.get("flight_number", ""),
+                    )
+                    t.pop("book_url", None)
+                    t.pop("booking_url", None)
+                else:
+                    seen_urls.add(bu)
+
         total = len(targets)
         max_workers = min(_CONFIG.get("max_parallel_offers", 2), total)
         log.info("Ixigo fetch_offers: parallel mode, %d sessions for %d targets", max_workers, total)
@@ -571,7 +619,8 @@ class IxigoAgent:
                 min_flights = _CONFIG.get("min_flights_expected", 5)
 
                 def _do_extraction():
-                    return nova.act(
+                    return _act_with_retry(
+                        nova,
                         _get_instruction(extraction_cfg),
                         max_steps=max_steps,
                         schema=extraction_cfg["schema"],
@@ -622,9 +671,9 @@ class IxigoAgent:
                     ]
                     log.info("Ixigo Phase 1: %d flights extracted for %s→%s", len(results), from_city, to_city)
                     if len(results) < min_flights:
-                        log.critical(
-                            "Ixigo Phase 1: CRITICAL LOW COUNT — only %d flights after retry for %s→%s %s "
-                            "(expected ≥%d). Results may be incomplete.",
+                        log.warning(
+                            "Ixigo Phase 1: LOW COUNT — only %d flights after retry for %s→%s %s "
+                            "(expected ≥%d). Route may have fewer flights or page load was slow.",
                             len(results), from_city, to_city, date, min_flights,
                         )
                 else:

@@ -492,30 +492,64 @@
             }
         }
 
+        let olderExpanded = false;
+
+        function sessionItemHtml(s) {
+            const ts = s.timestamp_start ? new Date(s.timestamp_start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) : '';
+            return `
+                <div class="session-item ${selectedSession?.session_id === s.session_id ? 'active' : ''}"
+                     onclick="selectSession('${s.session_id}')">
+                    <div class="session-date">${s.date}${ts ? ' · ' + ts : ''}</div>
+                    <div class="session-id">${s.session_id}</div>
+                    <div class="session-route">${s.from_city} → ${s.to_city}</div>
+                </div>`;
+        }
+
         function renderSessions() {
             const filterDate = document.getElementById('filterDate').value;
             const filterSession = document.getElementById('filterSession').value.toLowerCase();
 
-            const filtered = allSessions.filter(s => {
-                const matchDate = !filterDate || s.date === filterDate;
-                const matchSession = !filterSession || s.session_id.includes(filterSession);
-                return matchDate && matchSession;
-            });
+            const filtered = allSessions
+                .filter(s => {
+                    const matchDate = !filterDate || s.date === filterDate;
+                    const matchSession = !filterSession || s.session_id.includes(filterSession);
+                    return matchDate && matchSession;
+                })
+                .sort((a, b) => (b.timestamp_start || '').localeCompare(a.timestamp_start || ''));
 
             document.getElementById('sessionCount').textContent = filtered.length;
 
-            const html = filtered.length === 0
-                ? '<div class="no-data">No sessions found</div>'
-                : filtered.map(s => `
-                    <div class="session-item ${selectedSession?.session_id === s.session_id ? 'active' : ''}"
-                         onclick="selectSession('${s.session_id}')">
-                        <div class="session-date">${s.date}</div>
-                        <div class="session-id">${s.session_id}</div>
-                        <div class="session-route">${s.from_city} → ${s.to_city}</div>
+            if (filtered.length === 0) {
+                document.getElementById('sessionsList').innerHTML = '<div class="no-data">No sessions found</div>';
+                return;
+            }
+
+            const recent = filtered.slice(0, 2);
+            const older  = filtered.slice(2);
+
+            let html = recent.map(sessionItemHtml).join('');
+
+            if (older.length > 0) {
+                html += `
+                    <div style="padding:8px 16px; background:#f3f4f6; border-top:2px solid #d1d5db; border-bottom:1px solid #e5e7eb; font-size:11px; color:#6b7280; cursor:pointer; user-select:none; display:flex; justify-content:space-between; align-items:center;"
+                         onclick="toggleOlder()">
+                        <span>📁 Older sessions (${older.length})</span>
+                        <span id="olderChevron">${olderExpanded ? '▲' : '▼'}</span>
                     </div>
-                `).join('');
+                    <div id="olderSessions" style="display:${olderExpanded ? 'block' : 'none'}">
+                        ${older.map(sessionItemHtml).join('')}
+                    </div>`;
+            }
 
             document.getElementById('sessionsList').innerHTML = html;
+        }
+
+        function toggleOlder() {
+            olderExpanded = !olderExpanded;
+            const el = document.getElementById('olderSessions');
+            const chevron = document.getElementById('olderChevron');
+            if (el) el.style.display = olderExpanded ? 'block' : 'none';
+            if (chevron) chevron.textContent = olderExpanded ? '▲' : '▼';
         }
 
         async function selectSession(sessionId) {

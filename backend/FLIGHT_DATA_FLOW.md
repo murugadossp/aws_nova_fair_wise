@@ -4,6 +4,61 @@ This document outlines the end-to-end data flow for flight processing in FareWis
 
 ## Changelog
 
+### 2026-03-15 (iteration 3) — Phase 4 Python pre-ranking + ActInvalidModelGenerationError retry + Phase 3 book_url dedup
+
+**Three architectural changes in one session:**
+
+#### 1. Phase 4: Python pre-ranking (eliminates CHECK-1 failures structurally)
+
+**Problem:** Nova Pro was sometimes declaring a more expensive flight as the winner while `all_results` correctly showed a cheaper option at rank 1 (CHECK-1 failure). Also, sending all N flights × full JSON to the LLM consumed excessive tokens.
+
+**New two-step approach in `NovaReasoner.calculate_best_flight()`:**
+
+```
+Step A (Python): _baseline_price() + _build_all_results()
+                 → sorts all flights deterministically by site coupon price
+                 → assigns rank 1..N
+                 → winner is always rank-1 — LLM cannot change which flight wins
+
+Step B (LLM):    receives ONLY rank-1 flight + its platform's card offers
+                 → asks: "can any bank card reduce the baseline further?"
+                 → returns: price_effective, card_used, card_benefit, reasoning
+```
+
+**`_baseline_price()` priority:**
+1. `offers.best_price_after_coupon` — site coupon already applied (most accurate)
+2. `offers.fare_details.final_price` — booking page total
+3. `flight.price` — raw listing price
+
+**Safety clamp:** `price_effective = min(llm_price, rank1_baseline)` — LLM cannot return a price higher than the Python-computed baseline.
+
+**Token reduction:** `maxTokens` 1024 → 512; prompt input shrinks from N flights × full JSON to 1 flight × 1 platform's card offers.
+
+**Changed file:** `backend/nova/reasoner.py` — added `_baseline_price()`, `_build_all_results()`, rewrote `calculate_best_flight()`.
+
+#### 2. `_act_with_retry()` — ActInvalidModelGenerationError recovery
+
+**Problem:** Nova Act occasionally generates a zero-height bounding box for a click target (e.g., `<box>389,756,414,756</box>`), raising `ActInvalidModelGenerationError`. Root cause: a popup obscures the element mid-step, causing the model to target the popup element instead of the intended control.
+
+**Fix:** Module-level `_act_with_retry(nova, instruction, *, max_retries=1, **kwargs)` in `agents/ixigo/agent.py`:
+1. Calls `nova.act()` normally
+2. On `ActInvalidModelGenerationError`: calls `_playwright_dismiss_popups(nova)`, sleeps 1s, retries once
+3. Re-raises if retry also fails
+
+All `nova.act()` calls inside `_do_extraction()`, `book_then_continue`, and `extract_coupons_from_booking_page` use `_act_with_retry()`.
+
+**Changed file:** `backend/agents/ixigo/agent.py`.
+
+#### 3. Phase 3: book_url deduplication (prevents session collision / CHECK-7b)
+
+**Problem:** Two flights from the same airline can share an identical `book_url` on the results page. When dispatched in parallel, both Nova Act sessions navigate to the same booking page — one target is analyzed twice while the other is never reached. The second slot's fare data actually belongs to the first slot's flight.
+
+**Fix:** In `_run_offer_loop_parallel()` (before parallel dispatch), build a `seen_urls: set[str]` and clear `book_url` / `booking_url` from duplicate targets. When a target has no `book_url`, the agent falls back to Nova Act search-page navigation using flight name/number.
+
+**Changed file:** `backend/agents/ixigo/agent.py` — added dedup loop in `_run_offer_loop_parallel`.
+
+---
+
 ### 2026-03-15 (iteration 2) — Fix: "Finding offers" badge still not appearing — wrong root cause identified
 
 **Problem:** Even after the previous fix (adding `updateInterimCardsWithScope`), the ⏳ badge and fare breakdown spinner were still not showing on interim cards.
@@ -83,18 +138,37 @@ This ensures data completeness while maintaining reasonable performance.
 **Goal:** Automate the booking flow to extract platform-specific coupons, discounts, and detailed fare breakdown.
 *   **Optimization:** Running this flow takes time (15-30s per flight), so it is limited to a configurable subset.
 *   **Constraint:** The agent reads `offers_top_n` from its `config.yaml` (Ixigo/Cleartrip: 5) and slices the target array (`targets = filtered[:5]`).
+*   **book_url deduplication (Phase 3 collision guard):** Before dispatching parallel sessions, `_run_offer_loop_parallel()` builds a `seen_urls` set. If two targets share the same `book_url`, the duplicate's URL fields (`book_url`, `booking_url`) are cleared. Without a `book_url`, the agent falls back to Nova Act search-page navigation by flight name — ensuring each booking page is analyzed exactly once.
 *   **Action:** Nova Act simulates clicking "Book" for the top 5 flights in parallel, scrapes the checkout/booking page for:
     - **Flights 1-5:** Base fare, taxes, convenience fee, and total price
     - **Flights 1-2:** Also extracts valid coupons and card-specific discounts
+*   **Nova Act retry (`_act_with_retry`):** Every `nova.act()` call is wrapped in `_act_with_retry()`. On `ActInvalidModelGenerationError` (zero-height bounding box — caused by popups obscuring elements), it calls `_playwright_dismiss_popups()`, sleeps 1s, and retries once before propagating the exception.
 *   **Output:** The `offers_analysis` array containing full fare breakdown for flights 1-5, plus coupon details for top 2.
 
-## 4. Final Reasoning (Nova Pro) — Coupon Analysis
-**Component:** `TravelOrchestrator._run_agent` -> `NovaReasoner.calculate_best_flight()`
-**Goal:** Apply the user's selected credit cards to the Top 2 analyzed flights, perform math to deduce the final effective price with best coupon, pick a definitive winner, and generate human-readable explanation.
-*   **Optimization:** Sending all flights to the LLM consumes excessive tokens and risks model truncation; coupon analysis is only valuable for the cheapest options.
-*   **Action:** The Orchestrator intercepts the payload and passes *only* the Top 2 flights (`flights[:2]`) to Nova Pro for coupon reasoning.
-*   **Nova Pro Constraint:** The prompt explicitly forces the LLM to return `all_results` at the exact length it received (2) without truncating.
-*   **Output:** A JSON structure containing the `winner` (Top 1 flight with best coupon applied), pricing breakdown, and `reasoning` text for Top 2 flights only.
+## 4. Final Reasoning (Nova Pro) — Python Pre-Ranking + Card Benefit
+**Component:** `TravelOrchestrator._run_agent` → `NovaReasoner.calculate_best_flight()`
+**Goal:** Rank all flights by true effective price (deterministically in Python), then use Nova Pro for one focused task: find the best bank card benefit for the rank-1 flight.
+
+### Two-step approach (as of 2026-03-15):
+
+**Step A — Python pre-ranking (deterministic):**
+- `_baseline_price(flight)` computes each flight's best known price:
+  1. `offers.best_price_after_coupon` (site coupon already applied — most accurate)
+  2. `offers.fare_details.final_price` (booking page total)
+  3. `flight.price` (raw listing price, fallback)
+- `_build_all_results(flights)` sorts all flights by baseline price ascending, assigns integer ranks 1..N, returns the `all_results` list with `price_raw`, `price_effective`, `saving`, `card_used=None`, `rank`.
+- **Winner is always rank-1 by definition** — LLM cannot change which flight wins (eliminates CHECK-1 failures structurally).
+
+**Step B — LLM card benefit (rank-1 only):**
+- Nova Pro receives: rank-1 flight JSON + its platform's bank card offers (user's cards + all available cards).
+- Prompt asks: "Can any bank card reduce the baseline ₹X further? If yes, return the card name and new effective price."
+- LLM returns: `{ price_effective, saving_percentage, card_used, card_benefit, reasoning_user, reasoning_friend }`.
+- **Safety clamp:** `price_effective = min(llm_price, rank1_baseline)` — LLM cannot inflate the price.
+- `maxTokens`: 512 (down from 1024); token input: 1 flight × 1 platform's card offers (down from N flights × full JSON).
+
+**Fallback:** If Nova Pro call fails, uses the Python pre-ranked result with `card_benefit = "Card offer data unavailable"`.
+
+*   **Output:** `{ winner, all_results, reasoning_user, reasoning_friend }` where `winner` is always the cheapest flight and `all_results` contains ranks 1..N with Python-computed effective prices (rank-1 also has card benefit applied if applicable).
 
 ## 5. Failsafe Re-Injection & Display
 **Component:** `TravelOrchestrator.run()`

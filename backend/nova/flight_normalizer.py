@@ -54,13 +54,14 @@ def _normalize_flight_number(fn: str, airline: str) -> str:
 
     Common issues from Nova Act visual extraction:
       - Internal spaces:  "6E 6081" → "6E6081",  "IX 1487" → "IX1487"
-      - Short IndiGo codes: "6E081" (3 digits) → warn; can't recover dropped digit
-        but stripping spaces first handles the most frequent cause ("6E 6081" → "6E6081")
+
+    IndiGo operates both 3-digit (6E189, 6E796) and 4-digit (6E6081) flight numbers.
+    Only warn on ≤2 digits after "6E" — those are definitively OCR noise.
+    3-digit IndiGo numbers are valid scheduled flights, not truncation.
 
     Rules:
       1. Strip all internal spaces and dashes from the numeric portion.
-      2. For IndiGo (prefix 6E): result must be exactly 6 chars (6E + 4 digits).
-         Log a warning if shorter so ops can spot persistent OCR issues.
+      2. For IndiGo (prefix 6E): warn only if ≤2 digits (OCR noise), trim if >4 digits.
     """
     if not fn:
         return fn
@@ -68,14 +69,14 @@ def _normalize_flight_number(fn: str, airline: str) -> str:
     # Step 1: collapse spaces/dashes so "6E 6081" → "6E6081", "IX-1487" → "IX1487"
     cleaned = re.sub(r"[\s\-]+", "", fn.upper())
 
-    # Step 2: IndiGo-specific — must be 6E + exactly 4 digits
+    # Step 2: IndiGo-specific sanity check
     m = re.match(r"^(6E)(\d+)$", cleaned)
     if m:
         digits = m.group(2)
-        if len(digits) < 4:
+        if len(digits) <= 2:
             log.warning(
                 "Flight number '%s' (airline=%s) has only %d digit(s) after '6E' — "
-                "likely OCR truncation; expected 4. Raw input: '%s'",
+                "likely OCR truncation. Raw input: '%s'",
                 cleaned, airline, len(digits), fn,
             )
         elif len(digits) > 4:

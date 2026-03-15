@@ -37,9 +37,9 @@ log = get_logger(__name__)
 _executor = ThreadPoolExecutor(max_workers=6)
 
 # Registry of available travel agents; planner selects a subset per query
+# Cleartrip disabled: remove from registry to skip it without UI showing "Pending"
 _TRAVEL_AGENTS: dict[str, type] = {
-    "cleartrip":  CleartripAgent,
-    "ixigo":      IxigoAgent,
+    "ixigo": IxigoAgent,
 }
 
 
@@ -317,8 +317,7 @@ class TravelOrchestrator:
             date         = r["date"]  or route.get("date", "")
             travel_class = r["class"] or route.get("class", "economy")
             filters      = plan.get("filters") or {}
-            # agent_names  = [n for n in plan["agents"] if n in _TRAVEL_AGENTS]
-            agent_names = ["ixigo"]  # Forced for Ixigo-only testing
+            agent_names  = [n for n in plan["agents"] if n in _TRAVEL_AGENTS]
 
             log.info(
                 "Plan: %s→%s date=%s class=%s agents=%s filters=%s",
