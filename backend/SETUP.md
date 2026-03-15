@@ -197,16 +197,51 @@ Expected:
 
 ## Step 10 — Run the Agent Tests
 
+### Option A — `run_test.sh` (recommended)
+
+`run_test.sh` handles venv activation, `.env` loading, banner printing, and elapsed time
+reporting automatically. Run it from the `backend/` directory:
+
+```bash
+cd /Users/murugadosssp/hackathons/devpost/aws_nova/backend
+
+# Quick smoke test: Nova model validation only (~30-60s, no browser)
+./run_test.sh nova
+
+# Ixigo E2E — Phase 1 only (~3-4 min, no booking funnel)
+./run_test.sh ixigo --phase1-only
+
+# Ixigo E2E — all 7 tests (~8-10 min)
+./run_test.sh ixigo
+
+# Show the Nova Act browser while tests run
+./run_test.sh ixigo --headed
+
+# Full test suite (CI / pre-push)
+./run_test.sh
+```
+
+For the complete flag reference and test documentation, see **[docs/TESTING.md](docs/TESTING.md)**.
+
+### Option B — direct Python (per-component)
+
 Open a second terminal tab (keep uvicorn running in the first):
 
 ```bash
 cd /Users/murugadosssp/hackathons/devpost/aws_nova/backend
 source .venv/bin/activate
 
-# Test each component individually:
+# Nova model tests (no browser):
 python3 tests/test_nova_identifier.py    # Nova Lite — product ID from text
 python3 tests/test_nova_planner.py       # Nova Lite — NL query → structured plan
 python3 tests/test_nova_reasoner.py      # Nova Pro — price + card math
+
+# Ixigo E2E tests (browser required):
+python3 tests/test_ixigo_e2e.py                   # full suite — all 7 tests
+python3 tests/test_ixigo_e2e.py --phase1-only     # Phase 1 only (fast)
+python3 tests/test_ixigo_e2e.py --skip-orchestrator  # skip the slowest test
+
+# Individual agent tests:
 python3 tests/test_amazon_agent.py       # Nova Act — live Amazon search
 python3 tests/test_flipkart_agent.py     # Nova Act — live Flipkart search
 python3 tests/test_makemytrip_agent.py   # Nova Act — live MakeMyTrip search
@@ -221,6 +256,7 @@ To see the Nova Act browser window while tests run (watch the agent interact wit
 # FAREWISE_HEADED=1
 
 # Option 2: inline when running
+FAREWISE_HEADED=1 python3 tests/test_ixigo_e2e.py
 FAREWISE_HEADED=1 ./tests/run_agent.sh cleartrip
 ```
 
@@ -255,5 +291,8 @@ FAREWISE_HEADED=1 ./tests/run_agent.sh cleartrip
 
 ## Documentation
 
+- **[docs/TESTING.md](docs/TESTING.md)** — Complete testing guide: test suite structure, what each test mimics, assertion reference, log file locations, and how to add new tests.
+- **[ADMIN_DASHBOARD.md](ADMIN_DASHBOARD.md)** — Session logging system and admin dashboard at `http://localhost:7891/admin`.
+- **[FLIGHT_DATA_FLOW.md](FLIGHT_DATA_FLOW.md)** — End-to-end data pipeline: Phase 1 (extraction) → Phase 2 (normalization) → Phase 3 (offers) → Phase 4 (Nova Pro reasoning).
 - **[docs/AGENTS_ARCHITECTURE.md](docs/AGENTS_ARCHITECTURE.md)** — Agents folder structure, `config.yaml` layout, placeholders, and how to add a new agent.
 - **[docs/EXCEPTION_HANDLING.md](docs/EXCEPTION_HANDLING.md)** — How Nova Act errors are handled and how to use `ActExceptionHandler`.

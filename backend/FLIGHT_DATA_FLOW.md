@@ -2,6 +2,50 @@
 
 This document outlines the end-to-end data flow for flight processing in FareWise, specifically highlighting the optimizations implemented for Ixigo and Cleartrip.
 
+## Changelog
+
+### 2026-03-15 (iteration 2) — Fix: "Finding offers" badge still not appearing — wrong root cause identified
+
+**Problem:** Even after the previous fix (adding `updateInterimCardsWithScope`), the ⏳ badge and fare breakdown spinner were still not showing on interim cards.
+
+**True root cause — message ordering in orchestrator:** The previous fix assumed `coupon_analysis_scope` arrived *after* `agent_phase`. In reality it arrived *much later* — only after `asyncio.gather()` finished all of Phase 3. By then, `offer_extracted` messages had already run `updateInterimCard()` which finalises cards (solid border + fare breakdown). So `updateInterimCardsWithScope` was adding badges to already-final cards, or being skipped by the guard.
+
+The actual message order before fix:
+```
+agent_phase              → renderInterimResults (couponAnalysisFlights empty → no badge, no spinner)
+offer_extracted × N      → updateInterimCard (adds fare breakdown, finalises card)
+coupon_analysis_scope    → updateInterimCardsWithScope (too late — cards already done)
+```
+
+**Fix (`orchestrator.py`):** Moved `coupon_analysis_scope` emission into the `on_progress("phase2_start")` callback, queued via `run_coroutine_threadsafe` *immediately before* `agent_phase`. Both are queued to the same event loop FIFO, so the frontend processes scope first, then renders interim cards with the set already populated.
+
+New message order:
+```
+coupon_analysis_scope    → couponAnalysisFlights populated {"ixigo-6E537", ...}
+agent_phase              → renderInterimResults sees non-empty set → isSearchingCoupons=true → ⏳ badge + spinner shown
+offer_extracted × N      → updateInterimCard removes badge, adds Base/Taxes/Conv.Fee breakdown
+results                  → renderResults shows final cards
+```
+
+**Secondary fix (`sidepanel.html`):** Added guard in `updateInterimCardsWithScope` — skips cards whose `borderStyle === 'solid'` (already finalised by `updateInterimCard`) to prevent the legacy post-gather `coupon_analysis_scope` from re-adding stale badges.
+
+**Changed files:**
+- `backend/agents/orchestrator.py` — moved `coupon_analysis_scope` send inside `on_progress("phase2_start")` callback, before `agent_phase`; removed the post-`asyncio.gather()` send
+- `frontend_chrome_extension/sidepanel/sidepanel.html` — added finalised-card guard in `updateInterimCardsWithScope`
+
+### 2026-03-15 (iteration 1) — Fix: "Finding offers" badge and fare breakdown spinner not showing during Phase 1
+
+**Problem:** When flight cards were rendered during Phase 1 (interim results), the "⏳ Finding best offers..." badge and "Extracting coupon offers..." spinner were never displayed — cards just appeared at low opacity with no loading feedback.
+
+**Root cause (first diagnosis):** `renderInterimResults()` in `sidepanel.html` is called when the `agent_phase` WebSocket message arrives. At that point, `couponAnalysisFlights` was still empty. The condition `couponAnalysisFlights.size === 0 ? false : ...` treated an empty set as "no flights need analysis", so `isSearchingCoupons` was always `false`.
+
+**Fix (`sidepanel.html`):** Added `updateInterimCardsWithScope(flightIds)` function called when `coupon_analysis_scope` arrives, to retroactively patch already-rendered cards with the badge and spinner.
+
+**Changed files:**
+- `frontend_chrome_extension/sidepanel/sidepanel.html` — new `updateInterimCardsWithScope()` function; `coupon_analysis_scope` message handler now calls it after populating the set
+
+---
+
 ## Key Recent Change (Mar 15, 2026)
 
 **Offer Extraction Extended from Top 2 → Top 5 Flights**

@@ -1,5 +1,47 @@
 # Admin Dashboard — Session Logging & Debugging
 
+## Changelog
+
+### 2026-03-15 (iteration 2) — Fix: Logs tab not scrollable and text not left-aligned
+
+**Problem:** The Logs tab rendered all log lines in a block with centered text and no scrollbar, making long sessions unreadable.
+
+**Fix (`admin-backend.html`):** Updated `.logs-container` CSS:
+- `overflow-y: auto` → `overflow-y: scroll`
+- Added `text-align: left`
+- `max-height` increased to `500px`
+
+**Changed files:**
+- `backend/admin-backend.html` — `.logs-container` CSS block
+
+---
+
+### 2026-03-15 (iteration 1) — Fix: Nova Act logs not appearing in admin dashboard
+
+**Problem:** The Logs tab in the admin dashboard showed "No logs available" for every session, even when agents ran successfully.
+
+**Root cause:** `log_nova_act()` was defined in `session_logger.py` but never called anywhere. In production the server only has a `StreamHandler` (stdout), so no log output was ever written to disk under the session directory. The admin API's `get_session_details` reads `nova_act_*.log` files — files that never existed.
+
+**Fix (`session_logger.py`):** `create_session()` now attaches a `FileHandler` to Python's root logger, writing to `nova_act_session.log` inside the session directory. `finalize_session()` removes it. Because it hooks the **root logger**, all `log.info/warning/error` calls from every module — agents, Nova Act internals (`nova_act.types.workflow`), `FlightNormalizer`, `NovaReasoner` — are automatically captured with no changes to those files.
+
+**Changed files:**
+- `backend/session_logger.py` — added `_attach_file_handler()` / `_detach_file_handler()` helpers; called from `create_session()` and `finalize_session()`
+
+**Session directory change:**
+
+Previously documented (but never created):
+```
+nova_act_ixigo.log
+nova_act_cleartrip.log
+```
+
+Now actually created:
+```
+nova_act_session.log    ← all agents + Nova Act internals combined
+```
+
+---
+
 ## Overview
 
 The Admin Dashboard is a comprehensive debugging and monitoring system for flight searches. Every search creates a **session directory** containing complete logs, screenshots, execution timelines, and error reports.
@@ -21,8 +63,7 @@ logs/
 └── 2026-03-15/                          (date directory)
     └── a1b2c3d4/                        (session ID)
         ├── metadata.json                (search parameters, status)
-        ├── nova_act_ixigo.log          (Nova Act workflow logs)
-        ├── nova_act_cleartrip.log      (Nova Act workflow logs)
+        ├── nova_act_session.log        (all Nova Act + agent logs, auto-captured)
         ├── execution.json              (phase execution timeline)
         ├── errors.json                 (errors encountered)
         ├── screenshots_meta.json       (screenshot metadata)
@@ -371,10 +412,10 @@ rm -rf logs/2026-03-08/
 
 ### Q: Session created but no logs appear
 
-**A:** Check that:
-1. Session logger is being used in your code
-2. `log_nova_act()`, `log_phase()` calls are made
-3. Logs directory has write permissions: `chmod -R 755 backend/logs`
+**A:** `nova_act_session.log` is created automatically when `create_session()` is called — no manual `log_nova_act()` calls are needed. If the file is missing:
+1. Check that `finalize_session()` was called (it flushes and closes the handler)
+2. Ensure the logs directory has write permissions: `chmod -R 755 backend/logs`
+3. Verify the session dir was created: `ls backend/logs/<date>/<session_id>/`
 
 ---
 

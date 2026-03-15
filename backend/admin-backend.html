@@ -248,8 +248,9 @@
             border-radius: 6px;
             font-family: "Courier New", monospace;
             font-size: 12px;
-            max-height: 400px;
-            overflow-y: auto;
+            max-height: 500px;
+            overflow-y: scroll;
+            text-align: left;
             white-space: pre-wrap;
             word-wrap: break-word;
             line-height: 1.5;
@@ -432,6 +433,8 @@
                             <div class="tab" onclick="switchTab('execution')">⏱️ Execution</div>
                             <div class="tab" onclick="switchTab('screenshots')">📸 Screenshots</div>
                             <div class="tab" onclick="switchTab('errors')">⚠️ Errors</div>
+                            <div class="tab" onclick="switchTab('analysis')">🧠 Analysis</div>
+                            <div class="tab" onclick="switchTab('pipeline')">🔀 Pipeline Flow</div>
                         </div>
 
                         <!-- Tab: Logs -->
@@ -452,6 +455,18 @@
                         <!-- Tab: Errors -->
                         <div id="errors" class="tab-content">
                             <div id="errorsContent" class="no-data">No errors recorded</div>
+                        </div>
+
+                        <!-- Tab: Analysis -->
+                        <div id="analysis" class="tab-content">
+                            <div id="analysisContent" class="no-data">No analysis report available yet. Report is generated automatically when a session completes.</div>
+                        </div>
+
+                        <!-- Tab: Pipeline Flow -->
+                        <div id="pipeline" class="tab-content">
+                            <div id="pipelineContent" style="font-size:13px; line-height:1.7; color:#1f2937;">
+                                <div style="font-family: monospace; background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:16px; overflow-x:auto;" id="pipelineMarkdown">Loading...</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -527,6 +542,7 @@
                 renderExecution(details.execution);
                 renderScreenshots(details.screenshots);
                 renderErrors(details.errors);
+                renderAnalysis(details.analysis_report);
             } catch (error) {
                 console.error('Error loading session details:', error);
             }
@@ -570,9 +586,14 @@
         function renderLogs(logs) {
             const logContent = document.getElementById('logsContent');
             if (!logs || logs.length === 0) {
-                logContent.innerHTML = '<div class="no-data">No logs available</div>';
+                logContent.className = 'no-data';
+                logContent.innerHTML = 'No logs available';
                 return;
             }
+
+            // Remove no-data class so its text-align:center doesn't bleed in
+            logContent.className = '';
+            logContent.style.textAlign = 'left';
 
             logContent.innerHTML = `<div class="logs-container">${logs.map(log => {
                 let className = '';
@@ -646,12 +667,54 @@
             `).join('');
         }
 
+        function renderAnalysis(report) {
+            const el = document.getElementById('analysisContent');
+            if (!report) {
+                el.className = 'no-data';
+                el.innerHTML = '⏳ Analysis not ready yet — generated automatically after session completes.<br><small>You can also run <code>/analyze-session</code> in Claude Code for an immediate report.</small>';
+                return;
+            }
+            el.className = '';
+            el.style.textAlign = 'left';
+            // Render the report as preformatted monospace text preserving the box-drawing chars
+            el.innerHTML = `<pre style="background:#1f2937;color:#e5e7eb;padding:16px;border-radius:8px;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word;font-family:'Courier New',monospace;">${escapeHtml(report)}</pre>`;
+        }
+
         function switchTab(tabName) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
             event.target.classList.add('active');
             document.getElementById(tabName).classList.add('active');
+
+            if (tabName === 'pipeline') loadPipelineFlow();
+        }
+
+        let pipelineLoaded = false;
+        async function loadPipelineFlow() {
+            if (pipelineLoaded) return;
+            try {
+                const res = await fetch('/api/admin/pipeline-flow');
+                const data = await res.json();
+                const el = document.getElementById('pipelineMarkdown');
+                // Render as pre-formatted text with basic markdown-to-html conversion
+                let html = escapeHtml(data.content)
+                    .replace(/^(#{1,6})\s+(.+)$/gm, (_, h, t) => {
+                        const level = h.length;
+                        const sizes = ['1.5em','1.3em','1.1em','1em','0.9em','0.85em'];
+                        return `<div style="font-size:${sizes[level-1]};font-weight:700;margin:${level<=2?'20px':'12px'} 0 6px;color:${level<=2?'#1e40af':'#374151'};font-family:sans-serif;">${t}</div>`;
+                    })
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/`([^`]+)`/g, '<code style="background:#e5e7eb;padding:1px 4px;border-radius:3px;font-size:11px;">$1</code>')
+                    .replace(/^-\s+(.+)$/gm, '<div style="margin-left:16px;margin-bottom:2px;">• $1</div>')
+                    .replace(/^```[\w]*\n?([\s\S]*?)```/gm, '<pre style="background:#1f2937;color:#e5e7eb;padding:12px;border-radius:6px;font-size:11px;overflow-x:auto;margin:8px 0;">$1</pre>')
+                    .replace(/\n{2,}/g, '<br><br>')
+                    .replace(/\n/g, '<br>');
+                el.innerHTML = html;
+                pipelineLoaded = true;
+            } catch (e) {
+                document.getElementById('pipelineMarkdown').textContent = 'Failed to load pipeline flow: ' + e.message;
+            }
         }
 
         function viewScreenshot(path) {
