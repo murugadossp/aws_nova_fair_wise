@@ -914,6 +914,10 @@
     const agentTimers = {};
     const agentIntervals = {};
 
+    // Track which flights are being analyzed for coupons (from backend config)
+    // Format: Set of "platform-flight_number" strings
+    const couponAnalysisFlights = new Set();
+
     function startAgentTimer(agent) {
       agentTimers[agent] = Date.now();
       if (agentIntervals[agent]) clearInterval(agentIntervals[agent]);
@@ -1005,6 +1009,16 @@
         document.getElementById('main-spinner').classList.add('hidden');
         renderResults(msg);
         setTimeout(() => document.getElementById('progress-panel').classList.remove('show'), 2000);
+      }
+      else if (msg.type === 'coupon_analysis_scope') {
+        // Backend tells frontend which flights are being analyzed for coupons
+        // This is dynamic based on backend config, not hardcoded limits
+        couponAnalysisFlights.clear();
+        if (msg.flight_ids) {
+          msg.flight_ids.forEach(id => couponAnalysisFlights.add(id));
+        }
+        // Update UI to show which flights are being analyzed
+        document.getElementById('progress-main-text').textContent = msg.message;
       }
       else if (msg.type === 'offer_extracted') {
         console.log("Offer extracted for flight:", msg.offer.airline, msg.offer.flight_number);
@@ -1166,10 +1180,11 @@
       
       flights.forEach((flight, index) => {
         const rawP = flight.price || 0;
-        // Show coupon search progress for top 5 flights (Phase 3 offer extraction covers top 5)
-        const isSearchingCoupons = index < 5;
+        // Check if this flight is being analyzed for coupons (set by backend via coupon_analysis_scope message)
+        const flightId = `${agent}-${flight.flight_number}`;
+        const isSearchingCoupons = couponAnalysisFlights.size === 0 ? false : couponAnalysisFlights.has(flightId);
 
-        // Show "Finding best coupon offers..." for top 5 flights being analyzed
+        // Show "Finding best offers..." badge for flights being analyzed
         const badgeHtml = isSearchingCoupons
           ? `<div class="best-badge" style="background:var(--elevated); color:var(--t2); border: 1px dashed var(--blue-glow); font-weight:600; padding:6px 12px; font-size:11px;">⏳ Finding best offers...</div>`
           : '';

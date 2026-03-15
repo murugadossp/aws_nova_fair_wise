@@ -388,6 +388,16 @@ class TravelOrchestrator:
             await self._send({"type": "progress", "step": "reranking",
                                "message": f"Re-ranking top {top_n_for_reasoning} by best deals (after coupons)…"})
 
+            # ─ Tell frontend which flights are being analyzed for coupons (dynamic based on config)
+            # This way, frontend doesn't need hardcoded limits. It adapts to backend config automatically.
+            coupon_flight_ids = [f"{f.get('platform')}-{f.get('flight_number')}" for f in flights[:top_n_for_reasoning]]
+            await self._send({
+                "type": "coupon_analysis_scope",
+                "flight_ids": coupon_flight_ids,
+                "count": top_n_for_reasoning,
+                "message": f"Extracting best coupon offers for {top_n_for_reasoning} flights…"
+            })
+
             # ── Step 4: Rank — Nova Pro applies card offers, picks winner ─────
             await self._send({"type": "progress", "step": "ranking",
                                "message": "Applying card discounts to find your best deal…"})
