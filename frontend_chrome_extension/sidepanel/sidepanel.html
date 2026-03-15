@@ -1166,27 +1166,32 @@
       
       flights.forEach((flight, index) => {
         const rawP = flight.price || 0;
-        const isSearchingCoupons = index < 2;
-        
-        // Show "Finding Coupons" for top 2, others are just items
-        const badgeHtml = isSearchingCoupons 
-          ? `<div class="best-badge" style="background:var(--elevated); color:var(--t2); border: 1px dashed var(--blue-glow); font-weight:600; padding:6px 12px; font-size:11px;">⏳ Finding Coupons...</div>`
+        // Show coupon search progress for top 5 flights (Phase 3 offer extraction covers top 5)
+        const isSearchingCoupons = index < 5;
+
+        // Show "Finding best coupon offers..." for top 5 flights being analyzed
+        const badgeHtml = isSearchingCoupons
+          ? `<div class="best-badge" style="background:var(--elevated); color:var(--t2); border: 1px dashed var(--blue-glow); font-weight:600; padding:6px 12px; font-size:11px;">⏳ Finding best offers...</div>`
           : '';
-          
+
         const fd = (flight.offers && flight.offers.fare_details) || flight.fare_details || flight.fare_breakdown;
-        let breakdownHtml = `
-          <div class="breakdown-placeholder" style="font-size:12px; color:var(--t3); display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1px dashed var(--elevated); align-items:center;">
-            <div class="spinner" style="width:12px; height:12px; border-width:1.5px;"></div>
-            <span>Fetching fare breakdown...</span>
-          </div>
-        `;
-        
+        let breakdownHtml = '';
+
+        // Fare breakdown is already available from Phase 1 extraction
         if (fd) {
             breakdownHtml = `
               <div style="font-size:13px; color:var(--t2); display:flex; gap:12px; margin-top:10px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1.5px solid var(--elevated); font-weight:500;">
                 <span>Base: ₹${fd.base_fare}</span>
                 <span>Taxes: ₹${fd.taxes}</span>
                 <span>Conv. Fee: ₹${fd.convenience_fee || 0}</span>
+              </div>
+            `;
+        } else if (isSearchingCoupons) {
+            // Only show loading state for flights being analyzed if breakdown is missing
+            breakdownHtml = `
+              <div class="breakdown-placeholder" style="font-size:12px; color:var(--t3); display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1px dashed var(--elevated); align-items:center;">
+                <div class="spinner" style="width:12px; height:12px; border-width:1.5px;"></div>
+                <span>Extracting coupon offers...</span>
               </div>
             `;
         }
