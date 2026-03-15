@@ -37,7 +37,6 @@ _executor = ThreadPoolExecutor(max_workers=6)
 
 # Registry of available travel agents; planner selects a subset per query
 _TRAVEL_AGENTS: dict[str, type] = {
-    "makemytrip": MakeMyTripAgent,
     "cleartrip":  CleartripAgent,
     "ixigo":      IxigoAgent,
 }
@@ -209,10 +208,36 @@ class TravelOrchestrator:
     ) -> dict:
         """Run one travel agent; return {flights, offers_analysis} so full filtered list + top-2 coupons are preserved."""
         await self._send({"type": "agent_start", "agent": name})
+        loop = asyncio.get_running_loop()
+        
+        def on_progress(event: str, data: any):
+            if event == "phase2_start":
+                asyncio.run_coroutine_threadsafe(
+                    self._send({
+                        "type": "agent_phase",
+                        "agent": name,
+                        "phase": 2,
+                        "count": len(data) if isinstance(data, list) else 0,
+                        "interim_flights": data
+                    }),
+                    loop
+                )
+            elif event == "offer_extracted":
+                asyncio.run_coroutine_threadsafe(
+                    self._send({
+                        "type": "offer_extracted",
+                        "agent": name,
+                        "offer": data
+                    }),
+                    loop
+                )
+
         try:
             kwargs = {}
-            if name in {"cleartrip", "makemytrip"}:
+            if name in {"cleartrip", "makemytrip", "ixigo"}:
                 kwargs["fetch_offers"] = True
+                kwargs["on_progress"] = on_progress
+                
             result = await _run_in_thread(
                 agent.search,
                 from_city, to_city, date, travel_class,
@@ -222,11 +247,26 @@ class TravelOrchestrator:
             # Some travel agents can return list-only results, while richer phased agents
             # return {"flights", "offers_analysis", "telemetry"}.
             if isinstance(result, dict) and "flights" in result:
-                flights = result["flights"]
+                # Agents that run FlightNormalizer internally return their normalized list in "filtered"
+                flights = result.get("filtered") if result.get("filtered") is not None else result["flights"]
                 offers_analysis = result.get("offers_analysis")
             else:
                 flights = result if isinstance(result, list) else []
                 offers_analysis = None
+                
+            # Broadcast the raw extracted JSON data so the UI can show it for transparency
+            if flights:
+                raw_to_show = flights
+                # Show raw data only for the flights that were picked for coupon analysis
+                if offers_analysis:
+                    raw_to_show = flights[:len(offers_analysis)]
+                    
+                await self._send({
+                    "type": "raw_data",
+                    "agent": name,
+                    "data": raw_to_show
+                })
+                
             await self._send({"type": "agent_done", "agent": name, "count": len(flights)})
             return {"flights": flights, "offers_analysis": offers_analysis}
         except Exception as e:
@@ -259,7 +299,8 @@ class TravelOrchestrator:
             date         = r["date"]  or route.get("date", "")
             travel_class = r["class"] or route.get("class", "economy")
             filters      = plan.get("filters") or {}
-            agent_names  = [n for n in plan["agents"] if n in _TRAVEL_AGENTS]
+            # agent_names  = [n for n in plan["agents"] if n in _TRAVEL_AGENTS]
+            agent_names = ["ixigo"]  # Forced for Ixigo-only testing
 
             log.info(
                 "Plan: %s→%s date=%s class=%s agents=%s filters=%s",
@@ -297,7 +338,9 @@ class TravelOrchestrator:
                 if isinstance(item, Exception):
                     log.error("Unexpected exception in gathered results: %s", item)
                 elif isinstance(item, dict):
-                    raw_flights.extend(item.get("flights", []))
+                    # Use 'filtered' if available as it contains Phase 2/3 data (offers)
+                    agent_flights = item.get("filtered") if item.get("filtered") else item.get("flights", [])
+                    raw_flights.extend(agent_flights)
                     if item.get("offers_analysis"):
                         offers_analysis = item["offers_analysis"]
 
@@ -318,21 +361,77 @@ class TravelOrchestrator:
                                    "message": "No flights matched your criteria. Try broadening your search."})
                 return
 
+            # ── Step 3b: Re-rank by effective price (after coupon discounts) ────────
+            # Flights were sorted by raw price in Phase 2. After offer extraction,
+            # flights may have coupon data (best_price_after_coupon). Re-sort by
+            # effective price to ensure Nova Pro analyzes the top deals (after coupons),
+            # not just the top raw prices. This surfacing flights that might be
+            # cheaper after coupons applied even if they weren't cheapest by raw price.
+            def effective_price_key(f):
+                # Use coupon-discounted baseline if available (from offer extraction Phase 5)
+                coupon_price = f.get("offers", {}).get("best_price_after_coupon")
+                return coupon_price or f.get("price") or 0
+
+            flights.sort(key=effective_price_key)
+            log.info(
+                "Re-sorted %d flights by effective price (after coupons): top 3 are ₹%d, ₹%d, ₹%d",
+                len(flights),
+                effective_price_key(flights[0]) if len(flights) > 0 else 0,
+                effective_price_key(flights[1]) if len(flights) > 1 else 0,
+                effective_price_key(flights[2]) if len(flights) > 2 else 0,
+            )
+
             # ── Step 4: Rank — Nova Pro applies card offers, picks winner ─────
             await self._send({"type": "progress", "step": "ranking",
                                "message": "Nova Pro calculating best fare with card discounts…"})
 
+            # Send top 5 flights (by effective price, not raw price) to Nova Pro
+            top_n_for_reasoning = min(5, len(flights))
             deal = await self.reasoner.calculate_best_flight(
-                flights=flights,
+                flights=flights[:top_n_for_reasoning],  # Top 5 by effective price (coupon-adjusted)
                 selected_cards=cards,
             )
+
+            # Merge LLM results back into original flights to preserve nested `offers`
+            all_results_from_llm = deal.get("all_results", [])
+            llm_map = {f"{r.get('platform')}-{r.get('flight_number')}": r for r in all_results_from_llm}
+            
+            with_coupons = []
+            without_coupons = []
+            
+            for index, f in enumerate(flights):
+                fid = f"{f.get('platform')}-{f.get('flight_number')}"
+                llm_data = llm_map.get(fid, {})
+
+                merged = {
+                    **f,
+                    "price_effective": llm_data.get("price_effective", f.get("price")),
+                    "saving": llm_data.get("saving", 0),
+                    "card_used": llm_data.get("card_used"),
+                }
+
+                if index < top_n_for_reasoning:  # Top N were sent for coupon analysis (now by effective price, not raw)
+                    with_coupons.append(merged)
+                else:                            # Rest are secondary flights (fare breakdown only)
+                    without_coupons.append(merged)
+                    
+            # Sort the coupon ones by effective price to ensure winner is first
+            def final_price(x):
+                return x.get("price_effective") or x.get("price") or 0
+                
+            with_coupons.sort(key=final_price)
+            without_coupons.sort(key=final_price)
 
             payload = {
                 "type":      "results",
                 "route":     {"from": from_city, "to": to_city, "date": date, "class": travel_class},
                 "winner":    deal.get("winner"),
-                "all":       deal.get("all_results", flights),
+                "with_coupons": with_coupons,
+                "without_coupons": without_coupons,
+                "all":       with_coupons + without_coupons,
                 "reasoning": deal.get("reasoning"),
+                "reasoning_user": deal.get("reasoning_user"),
+                "reasoning_friend": deal.get("reasoning_friend"),
             }
             # Full filtered list in "all"; top-2 with coupons in offers_analysis (Cleartrip); others in list but not analyzed
             if offers_analysis is not None:
