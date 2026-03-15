@@ -537,24 +537,44 @@ class IxigoAgent:
 
                 _apply_stealth(nova)
                 _wait_for_results(nova, url)
-                # Skeleton prevention: brief dwell so results list can hydrate before extraction scroll
-                sleep(3)
-                log.debug("Ixigo: post-wait dwell (3s) for results hydration")
+                # Skeleton prevention: dwell so results list can hydrate before extraction scroll
+                sleep(5)
+                log.debug("Ixigo: post-wait dwell (5s) for results hydration")
 
                 extraction_cfg = _CONFIG["steps"]["extraction"]
-                extracted = nova.act(
-                    _get_instruction(extraction_cfg),
-                    max_steps=max_steps,
-                    schema=extraction_cfg["schema"],
-                )
+                min_flights = _CONFIG.get("min_flights_expected", 5)
 
-                items = None
-                if isinstance(extracted, ActGetResult) and isinstance(
-                    getattr(extracted, "parsed_response", None), list
-                ):
-                    items = extracted.parsed_response
-                elif isinstance(extracted, list):
-                    items = extracted
+                def _do_extraction():
+                    return nova.act(
+                        _get_instruction(extraction_cfg),
+                        max_steps=max_steps,
+                        schema=extraction_cfg["schema"],
+                    )
+
+                def _parse_items(extracted):
+                    if isinstance(extracted, ActGetResult) and isinstance(
+                        getattr(extracted, "parsed_response", None), list
+                    ):
+                        return extracted.parsed_response
+                    if isinstance(extracted, list):
+                        return extracted
+                    return None
+
+                items = _parse_items(_do_extraction())
+
+                # Retry once if we got suspiciously few flights (page may not have hydrated fully)
+                if items is not None and len(items) < min_flights:
+                    log.warning(
+                        "Ixigo Phase 1: only %d flights (< %d expected) — waiting 4s and retrying extraction",
+                        len(items), min_flights,
+                    )
+                    sleep(4)
+                    retry_items = _parse_items(_do_extraction())
+                    if retry_items is not None and len(retry_items) > len(items):
+                        log.info("Ixigo Phase 1 retry: improved %d → %d flights", len(items), len(retry_items))
+                        items = retry_items
+                    else:
+                        log.info("Ixigo Phase 1 retry: no improvement (%d), keeping original", len(retry_items or []))
 
                 if items is not None:
                     results = [
@@ -569,8 +589,14 @@ class IxigoAgent:
                         for item in items
                     ]
                     log.info("Ixigo Phase 1: %d flights extracted for %s→%s", len(results), from_city, to_city)
+                    if len(results) < min_flights:
+                        log.critical(
+                            "Ixigo Phase 1: CRITICAL LOW COUNT — only %d flights after retry for %s→%s %s "
+                            "(expected ≥%d). Results may be incomplete.",
+                            len(results), from_city, to_city, date, min_flights,
+                        )
                 else:
-                    log.warning("Ixigo extraction returned unexpected type: %s", type(extracted))
+                    log.warning("Ixigo extraction returned unexpected type from nova.act()")
 
                 if fetch_offers and results:
                     normalizer = FlightNormalizer()

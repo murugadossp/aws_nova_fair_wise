@@ -4,7 +4,11 @@ You are on the Ixigo fare / booking page for **{{airline}} flight {{flight_numbe
 
 ## Step 0 — Verify correct flight
 
-Before extracting anything, confirm the booking page is for flight **{{flight_number}}** by checking the itinerary header, flight badge, or fare summary title. If it shows a different flight number, return this JSON immediately without extracting anything:
+Before extracting anything, confirm the booking page is for flight **{{flight_number}}** by checking the itinerary header, flight badge, or fare summary title.
+
+**STRICT flight number matching:** Compare the digit sequence character-by-character (ignoring spaces, dashes, and case). For example: "6E0081", "6E-0081", and "6E 0081" all match "6E0081", but "6E6081" or "6E0011" do NOT match.
+
+If the digits do not match, return this JSON immediately without extracting anything:
 `{"error": "wrong_page", "fare_details": {}, "coupons": []}`
 
 ## Step 1 — Dismiss any popups

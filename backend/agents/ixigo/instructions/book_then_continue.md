@@ -17,7 +17,11 @@ If a fare-selection dialog, fare list, or mini booking sheet opens:
 - choose the already-selected default fare if one is preselected
 - otherwise choose the cheapest visible fare
 
-As soon as the page shows fare details, pricing breakdown, itinerary summary, or an offers/coupon panel — verify the booking page is for **{{airline}} {{flight_number}}** (check the itinerary or flight badge at the top). If it shows a different flight number, press the browser Back button, find the correct card, and click its Book button.
+As soon as the page shows fare details, pricing breakdown, itinerary summary, or an offers/coupon panel — verify the booking page is for **{{airline}} {{flight_number}}** by checking the flight number shown in the itinerary header or flight badge.
+
+**STRICT flight number matching:** The flight number on the page must match **{{flight_number}}** exactly (ignoring spaces, dashes, and case). For example: "6E0081", "6E-0081", and "6E 0081" all match "6E0081", but "6E6081" or "6E0011" do NOT match. Compare the digit sequence character-by-character.
+
+If the digits do not match, press the browser Back button, find the correct card, and click its Book button.
 
 Once you have confirmed the correct flight's booking page is open — STOP and return immediately.
 

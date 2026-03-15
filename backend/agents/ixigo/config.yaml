@@ -67,6 +67,7 @@ offers_top_n: 5
 offers_parallel: true
 max_parallel_offers: 2
 convenience_fee: 449
+min_flights_expected: 5  # warn + retry if Phase 1 extracts fewer than this
 
 steps:
   extraction:

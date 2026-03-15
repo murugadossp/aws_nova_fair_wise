@@ -6,15 +6,20 @@ This is a DATA EXTRACTION task on Ixigo's flight search results page.
 - Do NOT fill any search form. Results are already loaded.
 - Do NOT click any "Sort by" button. Do NOT change the sort order.
 - Do NOT click any "Book" button. Do NOT navigate away from this page.
-- **Dwell at top:** Wait about 3 seconds at the very top of the results list before your first scroll so the full list can finish loading (avoids skeleton placeholders).
+- **Dwell at top:** Wait about 5 seconds at the very top of the results list before your first scroll so the full list can finish loading (avoids skeleton placeholders).
 
-## Extraction
+## Extraction — Two-Pass Scroll
 
-Scroll from top to bottom of the results list. For every flight card that becomes
-visible during your scroll, record:
+**Pass 1 — slow downward scroll:**
+Scroll slowly from the top to the very bottom of the results list, pausing 1–2 seconds every 2–3 cards to let lazy-rendered cards hydrate. For every flight card that becomes visible, record all fields below.
 
-- airline: carrier name as displayed (e.g. "IndiGo", "Air India")
-- flight_number: flight code (e.g. "6E-537", "AI-505")
+**Pass 2 — upward sweep:**
+After reaching the bottom, scroll back up to the top, recording any cards you missed in Pass 1 (skeleton placeholders that have now loaded). Do not re-record flights already captured.
+
+For each flight card record:
+
+- airline: carrier name as displayed (e.g. "IndiGo", "Air India Express", "SpiceJet")
+- flight_number: exact flight code as shown (e.g. "6E-537", "AI-505", "SG-672") — preserve spaces/dashes exactly
 - departure: departure time in HH:MM 24-hour format
 - arrival: arrival time in HH:MM 24-hour format
 - duration: total flight time as displayed (e.g. "2h 15m")
@@ -23,9 +28,9 @@ visible during your scroll, record:
 - book_url: (optional) if a standard link (href) exists on the "Book" button, capture it. If the button is JavaScript-based or has no href, return an empty string "".
 - fare_details: (optional) if a fare breakdown (Base Fare, Taxes/Fees) is visible or appears on a mini-popup within the card, capture it.
 
-**Verification rule:** If a card still shows a loading/skeleton state, wait 1–2 seconds before recording it; otherwise record as soon as details (price and airline) are visible.
+**Verification rule:** If a card still shows a loading/skeleton state, wait 2 seconds before recording it; otherwise record as soon as price and airline are visible.
 
-Return up to 10 results. If steps run low, return what you have — do not fail.
+Return up to 15 results. If steps run low, return what you have — do not fail.
 Return ONLY a valid JSON array. No markdown or explanation.
 
 ## STRICT RULES
