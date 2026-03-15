@@ -3,3 +3,6 @@
 
 # Agent test log files
 logs/
+
+# Server PID file
+bin/.server.pid
