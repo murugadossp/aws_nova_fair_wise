@@ -88,13 +88,17 @@ async def get_session_details(session_id: str) -> Dict[str, Any]:
         with open(metadata_file) as f:
             metadata = json.load(f)
 
-    # Read logs
+    # Read logs — nova_act_session.log first (main log with Python + Nova Act stdout),
+    # then any supplementary per-agent logs written via log_nova_act().
     logs = []
-    for log_file in session_dir.glob("nova_act_*.log"):
+    log_files = sorted(
+        session_dir.glob("nova_act_*.log"),
+        key=lambda p: (0 if p.name == "nova_act_session.log" else 1, p.name),
+    )
+    for log_file in log_files:
         try:
-            with open(log_file) as f:
+            with open(log_file, encoding="utf-8") as f:
                 content = f.read()
-                # Split into lines and filter empty ones
                 logs.extend([line for line in content.split('\n') if line.strip()])
         except Exception as e:
             logs.append(f"Error reading {log_file.name}: {e}")
@@ -142,6 +146,15 @@ async def get_session_details(session_id: str) -> Dict[str, Any]:
         except Exception:
             pass
 
+    # Read auto-generated analysis report
+    analysis_report = None
+    analysis_file = session_dir / "session_analysis.md"
+    if analysis_file.exists():
+        try:
+            analysis_report = analysis_file.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
     return {
         "session_id": session_id,
         "metadata": metadata,
@@ -149,6 +162,7 @@ async def get_session_details(session_id: str) -> Dict[str, Any]:
         "execution": execution,
         "screenshots": screenshots,
         "errors": errors,
+        "analysis_report": analysis_report,
     }
 
 
@@ -212,3 +226,14 @@ async def get_summary() -> Dict[str, Any]:
         "total_by_agent": by_agent,
         "recent_errors": recent_errors,
     }
+
+
+@router.get("/pipeline-flow")
+async def get_pipeline_flow() -> Dict[str, Any]:
+    """Serve the FLIGHT_DATA_FLOW.md content for embedding in the admin dashboard."""
+    md_path = Path("backend/FLIGHT_DATA_FLOW.md")
+    if not md_path.exists():
+        md_path = Path("FLIGHT_DATA_FLOW.md")
+    if not md_path.exists():
+        raise HTTPException(status_code=404, detail="FLIGHT_DATA_FLOW.md not found")
+    return {"content": md_path.read_text(encoding="utf-8")}

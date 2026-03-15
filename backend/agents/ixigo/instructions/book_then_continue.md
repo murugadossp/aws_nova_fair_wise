@@ -6,13 +6,20 @@ Find the flight card for {{airline}} flight {{flight_number}} priced at approxim
 Click that card's `Book` button only.
 Do NOT click any other flight's Book button.
 
-**If the target flight is not visible after scrolling once to the footer:** refresh the page once, wait about 5 seconds for the list to re-populate, then scroll again to find the card. Do NOT open "Filter Flights", do NOT type in any search box, and do NOT change sort order.
+**If the target flight is not visible after scrolling the full page once:**
+1. Scroll back to the top of the page.
+2. Reload the page (use the browser reload, not the search button) and wait 4 seconds.
+3. Scroll from top to bottom once more to find the card.
+4. If still not found, return immediately without clicking anything — do NOT keep scrolling or clicking.
+Do NOT open "Filter Flights", do NOT type in any search box, and do NOT change sort order.
 
 If a fare-selection dialog, fare list, or mini booking sheet opens:
 - choose the already-selected default fare if one is preselected
 - otherwise choose the cheapest visible fare
 
-As soon as the page shows fare details, pricing breakdown, itinerary summary, or an offers/coupon panel for this flight — STOP and return immediately.
+As soon as the page shows fare details, pricing breakdown, itinerary summary, or an offers/coupon panel — verify the booking page is for **{{airline}} {{flight_number}}** (check the itinerary or flight badge at the top). If it shows a different flight number, press the browser Back button, find the correct card, and click its Book button.
+
+Once you have confirmed the correct flight's booking page is open — STOP and return immediately.
 
 ## STRICT RULES
 

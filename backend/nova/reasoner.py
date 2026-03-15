@@ -191,6 +191,16 @@ Return ONLY this JSON structure:
         selected_cards: list[str],
     ) -> dict:
         """Same reasoning logic but for flight results."""
+        log.info("NovaReasoner Phase 4: calculating best flight across %d options, cards=%s",
+                 len(flights), selected_cards)
+        for i, f in enumerate(flights):
+            log.info("  [%d] %s %s  dep=%s arr=%s  price=₹%s  coupons=%d",
+                     i + 1,
+                     f.get("airline", "?"), f.get("flight_number", "?"),
+                     f.get("departure", "?"), f.get("arrival", "?"),
+                     f.get("price", "?"),
+                     len((f.get("offers") or {}).get("coupons") or []))
+
         # Build offer context
         platform_offers = {}
         all_platform_offers = {}
@@ -215,11 +225,17 @@ Calculate two things:
 1. The winner using ONLY the "User's Bank card offers".
 2. The absolute lowest price winner using "ALL available Bank card offers".
 
-BASELINE PRICE CALCULATION:
-- If a flight has `offers.best_price_after_coupon`, use it as your STARTING BASELINE for applying bank card discounts.
-- If not, use the `price` field as your baseline.
-- Bank card discounts are usually subtracted from this baseline.
-- If multiple discounts (coupon + card) don't stack, pick the best one.
+BASELINE PRICE CALCULATION — follow these rules exactly:
+1. If a flight has `offers.best_price_after_coupon` (not null), use it as the STARTING BASELINE. This value already includes the convenience fee and the best site coupon discount.
+2. If `offers.best_price_after_coupon` is null, use `offers.fare_details.final_price` as the baseline (booking-page total including convenience fee).
+3. If neither is available, use `price` as a last resort.
+4. CRITICAL: NEVER add `fare_details.convenience_fee` to any baseline — it is already included in `best_price_after_coupon` and `fare_details.final_price`. Adding it would double-count it.
+5. Bank card discounts are subtracted from the chosen baseline. If coupon + card don't stack, pick the best single discount.
+
+RANKING RULES:
+- `rank` 1 = lowest `price_effective` (best deal). Higher ranks = worse deals.
+- ALL items in `all_results` must be sorted strictly ascending by `price_effective` before assigning ranks.
+- Never assign a higher rank number (e.g. rank=2) to a flight with lower `price_effective` than a flight with a lower rank number (e.g. rank=3).
 
 Return ONLY this JSON:
 {{
@@ -281,9 +297,23 @@ IMPORTANT: DO NOT truncate the `all_results` list. You MUST return an item in `a
             else:
                 text = text.strip()
 
-            return {"success": True, **json.loads(text)}
+            parsed = json.loads(text)
+            winner = parsed.get("winner", {})
+            log.info("NovaReasoner Phase 4 result: winner=%s %s  price_raw=₹%s  price_effective=₹%s  card='%s'",
+                     winner.get("flight_details", {}).get("airline", "?"),
+                     winner.get("flight_details", {}).get("departure", ""),
+                     winner.get("price_raw"), winner.get("price_effective"),
+                     winner.get("card_used"))
+            log.info("NovaReasoner reasoning: %s", parsed.get("reasoning_user", ""))
+            for r in parsed.get("all_results", []):
+                log.info("  rank=%s  %s  raw=₹%s  effective=₹%s  saving=₹%s  card=%s",
+                         r.get("rank"), r.get("flight_number"),
+                         r.get("price_raw"), r.get("price_effective"),
+                         r.get("saving"), r.get("card_used"))
+            return {"success": True, **parsed}
 
         except Exception as e:
+            log.error("NovaReasoner Phase 4 failed, falling back to min-price: %s", e)
             if flights:
                 best = min(flights, key=lambda f: f.get("price", float("inf")))
                 return {"success": True, "winner": best, "all_results": flights,

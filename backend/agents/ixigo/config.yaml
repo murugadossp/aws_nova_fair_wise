@@ -59,9 +59,9 @@ time_buckets:
     end: 1440
     ixigo_value: "NIGHT"
 
-# Wait for results: [data-testid='pricing'] = Ixigo results container; null = static 4s only. 1s fast-fail so AI can start popup dismiss sooner; use 2000+ for slow networks.
-wait_for_selector: "[data-testid='pricing']"
-wait_for_selector_timeout_ms: 1000
+# Wait for results: null = static 4s sleep only (selector approach removed — [data-testid='pricing'] is not present on Ixigo results page).
+wait_for_selector: null
+wait_for_selector_timeout_ms: 4000
 
 offers_top_n: 5
 offers_parallel: true
@@ -102,10 +102,10 @@ steps:
               total:     { type: integer, minimum: 0 }
   book_then_continue:
     instruction_file: "instructions/book_then_continue.md"
-    max_steps: 30
+    max_steps: 50
   extract_coupons_from_booking_page:
     instruction_file: "instructions/extract_coupons_from_booking_page.md"
-    max_steps: 25
+    max_steps: 50
     schema:
       type: object
       required: [fare_details, coupons]

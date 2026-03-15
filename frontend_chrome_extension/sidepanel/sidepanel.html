@@ -1017,8 +1017,9 @@
         if (msg.flight_ids) {
           msg.flight_ids.forEach(id => couponAnalysisFlights.add(id));
         }
-        // Don't update progress message - just store the scope for card rendering
         console.log(`Coupon analysis scope: ${msg.count} flights`, msg.flight_ids);
+        // Interim cards may already be rendered — update them now with badges & spinners
+        updateInterimCardsWithScope(msg.flight_ids || []);
       }
       else if (msg.type === 'offer_extracted') {
         console.log("Offer extracted for flight:", msg.offer.airline, msg.offer.flight_number);
@@ -1035,6 +1036,58 @@
       else if (msg.type === 'plan') {
         renderPlanInfo(msg);
       }
+    }
+
+    function updateInterimCardsWithScope(flightIds) {
+      // Called when coupon_analysis_scope arrives — interim cards may already be rendered.
+      // Add "Finding best offers" badge and breakdown spinner to relevant cards.
+      flightIds.forEach(flightId => {
+        // flightId format: "{agent}-{flight_number}", e.g. "ixigo-6E537"
+        const dashIdx = flightId.indexOf('-');
+        if (dashIdx === -1) return;
+        const agent = flightId.substring(0, dashIdx);
+        const flightNumber = flightId.substring(dashIdx + 1);
+
+        const container = document.getElementById(`${agent}-col`);
+        if (!container) return;
+
+        const cards = container.querySelectorAll('.safe-interim');
+        for (const card of cards) {
+          const fnoEl = card.querySelector('.flight-no');
+          if (!fnoEl || fnoEl.textContent !== flightNumber) continue;
+
+          // Add badge if not already present and card hasn't been finalised yet
+          // (finalised = has solid blue border, meaning offer_extracted already ran)
+          const alreadyFinal = card.style.borderStyle === 'solid' && card.style.borderColor.includes('blue');
+          if (!card.querySelector('.best-badge') && !alreadyFinal) {
+            const badge = document.createElement('div');
+            badge.className = 'best-badge';
+            badge.style.cssText = 'background:var(--elevated); color:var(--t2); border: 1px dashed var(--blue-glow); font-weight:600; padding:6px 12px; font-size:11px;';
+            badge.textContent = '⏳ Finding best offers...';
+            card.insertBefore(badge, card.firstChild);
+          }
+
+          // Add breakdown spinner if no fare data and no placeholder yet
+          const fd = card.querySelector('.offer-details');
+          const placeholder = card.querySelector('.breakdown-placeholder');
+          if (!fd && !placeholder) {
+            const provRow = card.querySelector('.provider-row');
+            const detDiv = document.createElement('div');
+            detDiv.className = 'offer-details';
+            detDiv.innerHTML = `
+              <div class="breakdown-placeholder" style="font-size:12px; color:var(--t3); display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:8px 12px; border-radius:8px; border: 1px dashed var(--elevated); align-items:center;">
+                <div class="spinner" style="width:12px; height:12px; border-width:1.5px;"></div>
+                <span>Extracting coupon offers...</span>
+              </div>
+            `;
+            card.insertBefore(detDiv, provRow);
+          }
+
+          // Raise opacity to show these are being actively analyzed
+          card.style.opacity = '0.95';
+          break;
+        }
+      });
     }
 
     function updateInterimCard(agent, offer) {

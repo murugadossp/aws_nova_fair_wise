@@ -1,6 +1,11 @@
 This is a DATA EXTRACTION task.
 
-You are on the Ixigo fare / booking page for one selected flight.
+You are on the Ixigo fare / booking page for **{{airline}} flight {{flight_number}}**.
+
+## Step 0 — Verify correct flight
+
+Before extracting anything, confirm the booking page is for flight **{{flight_number}}** by checking the itinerary header, flight badge, or fare summary title. If it shows a different flight number, return this JSON immediately without extracting anything:
+`{"error": "wrong_page", "fare_details": {}, "coupons": []}`
 
 ## Step 1 — Dismiss any popups
 

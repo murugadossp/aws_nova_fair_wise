@@ -180,20 +180,28 @@ def _build_filtered_with_offers(
     """
     normalizer = FlightNormalizer()
     filtered = normalizer.normalize(raw_flights, filters=filters or {})
-    n = len(offers_analysis)
+
+    # Build offer lookup by flight_number so we match by identity, not array position.
+    # This is robust against parallel sessions completing in different orders or a
+    # session navigating to the wrong booking page (wrong_page offers are excluded).
+    offer_by_fn: dict[str, dict] = {}
+    for o in offers_analysis:
+        if o and not o.get("error") == "wrong_page":
+            fn = str(o.get("flight_number", "")).strip()
+            if fn:
+                offer_by_fn[fn] = o
+
     out: list[dict] = []
-    for i, flight in enumerate(filtered):
+    for flight in filtered:
         item = dict(flight)
-        if i < n:
-            o = offers_analysis[i]
-            item["offers"] = {
-                "booking_url": o.get("booking_url"),
-                "fare_details": o.get("fare_details") or {},
-                "coupons": o.get("coupons") or [],
-                "best_price_after_coupon": o.get("best_price_after_coupon"),
-            }
-        else:
-            item["offers"] = None
+        fn = str(flight.get("flight_number", "")).strip()
+        o = offer_by_fn.get(fn)
+        item["offers"] = {
+            "booking_url": o.get("booking_url"),
+            "fare_details": o.get("fare_details") or {},
+            "coupons": o.get("coupons") or [],
+            "best_price_after_coupon": o.get("best_price_after_coupon"),
+        } if o else None
         out.append(item)
     return out
 
@@ -302,8 +310,8 @@ class IxigoAgent:
                 log.info("Offers [%d/%d]: on booking page → %s", idx + 1, total, nova.page.url[:80])
 
             out = nova.act(
-                _get_instruction(coupons_cfg),
-                max_steps=coupons_cfg.get("max_steps", 25),
+                _sub(_get_instruction(coupons_cfg), airline=airline, flight_number=flight_number, price=str(price)),
+                max_steps=coupons_cfg.get("max_steps", 50),
                 schema=coupons_cfg.get("schema"),
             )
             parsed = (
@@ -312,7 +320,14 @@ class IxigoAgent:
                 else (out if isinstance(out, dict) else None)
             )
 
-            if isinstance(parsed, dict):
+            if isinstance(parsed, dict) and parsed.get("error") == "wrong_page":
+                log.warning(
+                    "Offers [%d/%d]: wrong booking page detected for %s %s — skipping extraction",
+                    idx + 1, total, airline, flight_number,
+                )
+                offer["error"] = "wrong_page"
+                coupon_list = []
+            elif isinstance(parsed, dict):
                 fare_details = parsed.get("fare_details") or {}
                 base_fare = int(fare_details.get("base_fare", 0) or 0)
                 taxes = int(fare_details.get("taxes", 0) or 0)
@@ -334,12 +349,20 @@ class IxigoAgent:
             else:
                 coupon_list = _normalize_coupons(parsed if isinstance(parsed, list) else [])
 
+            # final_price = booking-page total including convenience fee
+            # This is the authoritative baseline — always use it, not the Phase 1 price.
             final_price = int(offer.get("fare_details", {}).get("final_price", price) or price)
             for c in coupon_list:
                 c["price_after_coupon"] = max(0, final_price - int(c.get("discount", 0) or 0))
             offer["coupons"] = coupon_list
-            if coupon_list:
+            # Always set best_price_after_coupon so Nova Pro never falls back to
+            # the raw Phase-1 price (which can be lower than the booking-page total
+            # and causes the reasoner to add convenience_fee incorrectly).
+            if coupon_list and any(int(c.get("discount", 0) or 0) > 0 for c in coupon_list):
                 offer["best_price_after_coupon"] = min(c["price_after_coupon"] for c in coupon_list)
+            else:
+                # No effective coupon discount — use booking-page final price as baseline
+                offer["best_price_after_coupon"] = final_price
             log.info("Offers [%d/%d]: %d coupons extracted", idx + 1, total, len(coupon_list))
         except Exception as e:
             log.warning("Offers [%d/%d]: failed for %s %s: %s", idx + 1, total, airline, flight_number, e)

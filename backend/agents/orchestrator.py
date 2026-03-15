@@ -214,12 +214,28 @@ class TravelOrchestrator:
         
         def on_progress(event: str, data: any):
             if event == "phase2_start":
+                flights_list = data if isinstance(data, list) else []
+                top_n = min(5, len(flights_list))
+                coupon_flight_ids = [
+                    f"{f.get('platform')}-{f.get('flight_number')}"
+                    for f in flights_list[:top_n]
+                ]
+                # Send coupon_analysis_scope BEFORE agent_phase so the frontend
+                # has the set populated before it renders interim cards.
+                asyncio.run_coroutine_threadsafe(
+                    self._send({
+                        "type": "coupon_analysis_scope",
+                        "flight_ids": coupon_flight_ids,
+                        "count": top_n
+                    }),
+                    loop
+                )
                 asyncio.run_coroutine_threadsafe(
                     self._send({
                         "type": "agent_phase",
                         "agent": name,
                         "phase": 2,
-                        "count": len(data) if isinstance(data, list) else 0,
+                        "count": len(flights_list),
                         "interim_flights": data
                     }),
                     loop
@@ -477,19 +493,28 @@ class TravelOrchestrator:
 
             # Finalize session with summary
             winner = deal.get("winner", {})
+            # winner has flight_details.airline (nested) and price_effective at top level
+            # flight_number lives in all_results[0]; fall back to platform
+            winner_flight_no = (deal.get("all_results") or [{}])[0].get("flight_number") or winner.get("platform", "?")
+            winner_airline = (winner.get("flight_details") or {}).get("airline") or winner.get("platform", "?")
             self.logger.finalize_session(
                 status="completed",
                 summary={
                     "total_flights": len(flights),
                     "flights_analyzed": min(5, len(flights)),
-                    "winner": f"{winner.get('airline')} {winner.get('flight_number')} at ₹{winner.get('price_effective')}",
+                    "winner": f"{winner_airline} {winner_flight_no} at ₹{winner.get('price_effective')}",
                 }
             )
 
             await self._send({"type": "done"})
+
+            # Auto-generate analysis report in background (non-blocking)
+            # Saved as session_analysis.md in the session directory for admin dashboard
+            asyncio.create_task(self.logger.generate_analysis_report_async())
 
         except Exception as e:
             log.error("TravelOrchestrator unhandled exception: %s", e)
             self.logger.log_error(str(e), "Unhandled exception during search", "orchestrator")
             self.logger.finalize_session(status="failed", summary={"error": str(e)})
             await self._send({"type": "error", "message": f"Flight search failed: {str(e)}"})
+            asyncio.create_task(self.logger.generate_analysis_report_async())
