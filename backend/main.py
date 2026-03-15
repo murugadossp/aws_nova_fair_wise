@@ -10,12 +10,13 @@ from typing import Optional
 
 from fastapi import FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
+from pathlib import Path
 
 from logger import get_logger
-from logger import get_logger
-from routers import travel, voice
+from routers import travel, voice, admin
 from nova.identifier import NovaIdentifier
 from nova.reasoner import NovaReasoner
 
@@ -60,6 +61,21 @@ app.add_middleware(
 # ── Routers ────────────────────────────────────────────────────────────────────
 app.include_router(travel.router,   prefix="/api/travel",   tags=["Travel"])
 app.include_router(voice.router,    prefix="/api/voice",    tags=["Voice"])
+app.include_router(admin.router,    tags=["Admin"])
+
+# ── Static Files: Serve logs directory ──────────────────────────────────────────
+logs_dir = Path("backend/logs")
+if logs_dir.exists():
+    app.mount("/logs", StaticFiles(directory=str(logs_dir)), name="logs")
+
+# ── Admin Dashboard ─────────────────────────────────────────────────────────────
+@app.get("/admin")
+async def admin_dashboard():
+    """Serve the admin dashboard HTML."""
+    admin_file = Path("backend/admin-backend.html")
+    if admin_file.exists():
+        return FileResponse(admin_file, media_type="text/html")
+    return {"error": "Admin dashboard not found"}
 
 # ── Health ─────────────────────────────────────────────────────────────────────
 @app.get("/health")

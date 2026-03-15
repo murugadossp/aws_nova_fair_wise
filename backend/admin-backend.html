@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova Flight Search - Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-top: 4px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"],
+        input[type="date"],
+        select {
+            padding: 8px 12px;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 14px;
+        }
+
+        input[type="text"]::placeholder,
+        select {
+            color: rgba(255,255,255,0.7);
+        }
+
+        button {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-1px);
+        }
+
+        .main-content {
+            padding: 30px;
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 30px;
+        }
+
+        .sessions-panel {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sessions-header {
+            background: #f9fafb;
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .sessions-list {
+            overflow-y: auto;
+            flex: 1;
+            max-height: 600px;
+        }
+
+        .session-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f3f4f6;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+
+        .session-item:hover {
+            background: #f9fafb;
+            border-left-color: #667eea;
+        }
+
+        .session-item.active {
+            background: #eef2ff;
+            border-left-color: #667eea;
+        }
+
+        .session-date {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-bottom: 4px;
+        }
+
+        .session-id {
+            font-weight: 600;
+            color: #1f2937;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .session-route {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+
+        .details-panel {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .details-empty {
+            padding: 40px;
+            text-align: center;
+            color: #9ca3af;
+        }
+
+        .details-header {
+            background: #f9fafb;
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .details-content {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .session-metadata {
+            background: #f9fafb;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 13px;
+        }
+
+        .metadata-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .metadata-row:last-child {
+            border-bottom: none;
+        }
+
+        .metadata-label {
+            font-weight: 600;
+            color: #6b7280;
+        }
+
+        .metadata-value {
+            color: #1f2937;
+            font-family: monospace;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #6b7280;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #374151;
+        }
+
+        .tab.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .logs-container {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: "Courier New", monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+
+        .log-error {
+            color: #fca5a5;
+        }
+
+        .log-success {
+            color: #86efac;
+        }
+
+        .log-warning {
+            color: #fbbf24;
+        }
+
+        .log-info {
+            color: #93c5fd;
+        }
+
+        .screenshots-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .screenshot-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .screenshot-item:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .screenshot-thumb {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            background: #f3f4f6;
+        }
+
+        .screenshot-meta {
+            padding: 8px 12px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 11px;
+        }
+
+        .screenshot-agent {
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .screenshot-time {
+            color: #9ca3af;
+            font-size: 10px;
+            margin-top: 2px;
+        }
+
+        .execution-timeline {
+            position: relative;
+            padding-left: 30px;
+        }
+
+        .timeline-item {
+            padding: 12px;
+            border-left: 2px solid #e5e7eb;
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -7px;
+            top: 16px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #667eea;
+            border: 2px solid white;
+            box-shadow: 0 0 0 2px #667eea;
+        }
+
+        .timeline-item.error {
+            border-left-color: #fca5a5;
+        }
+
+        .timeline-item.error::before {
+            background: #dc2626;
+            box-shadow: 0 0 0 2px #dc2626;
+        }
+
+        .timeline-phase {
+            font-weight: 600;
+            color: #1f2937;
+            font-size: 13px;
+        }
+
+        .timeline-agent {
+            color: #6b7280;
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        .timeline-duration {
+            color: #667eea;
+            font-weight: 500;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 20px;
+            color: #9ca3af;
+            font-size: 13px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .sessions-list {
+                max-height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>🔍 Nova Flight Search - Admin Dashboard</h1>
+                <p>Monitor sessions, view logs, and review Nova Act workflow execution</p>
+            </div>
+            <div class="controls">
+                <input type="date" id="filterDate" placeholder="Filter by date">
+                <input type="text" id="filterSession" placeholder="Filter session ID">
+                <button onclick="loadSessions()">🔄 Refresh</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Sessions List -->
+            <div class="sessions-panel">
+                <div class="sessions-header">
+                    📋 Sessions (<span id="sessionCount">0</span>)
+                </div>
+                <div class="sessions-list" id="sessionsList">
+                    <div class="no-data">Loading sessions...</div>
+                </div>
+            </div>
+
+            <!-- Details Panel -->
+            <div class="details-panel">
+                <div id="detailsEmpty" class="details-empty">
+                    <p style="font-size: 24px; margin-bottom: 8px;">👈</p>
+                    <p>Select a session to view details</p>
+                </div>
+
+                <div id="detailsContent" style="display: none; display: flex; flex-direction: column; height: 100%;">
+                    <div class="details-header">
+                        <strong>Session:</strong> <span id="selectedSessionId" style="font-family: monospace;"></span>
+                    </div>
+
+                    <div class="details-content" style="flex: 1; overflow-y: auto;">
+                        <!-- Metadata -->
+                        <div id="metadata" style="margin-bottom: 20px;"></div>
+
+                        <!-- Tabs -->
+                        <div class="tabs">
+                            <div class="tab active" onclick="switchTab('logs')">📝 Logs</div>
+                            <div class="tab" onclick="switchTab('execution')">⏱️ Execution</div>
+                            <div class="tab" onclick="switchTab('screenshots')">📸 Screenshots</div>
+                            <div class="tab" onclick="switchTab('errors')">⚠️ Errors</div>
+                        </div>
+
+                        <!-- Tab: Logs -->
+                        <div id="logs" class="tab-content active">
+                            <div id="logsContent" class="no-data">No logs available</div>
+                        </div>
+
+                        <!-- Tab: Execution -->
+                        <div id="execution" class="tab-content">
+                            <div id="executionContent" class="no-data">No execution data</div>
+                        </div>
+
+                        <!-- Tab: Screenshots -->
+                        <div id="screenshots" class="tab-content">
+                            <div id="screenshotsContent" class="no-data">No screenshots available</div>
+                        </div>
+
+                        <!-- Tab: Errors -->
+                        <div id="errors" class="tab-content">
+                            <div id="errorsContent" class="no-data">No errors recorded</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allSessions = [];
+        let selectedSession = null;
+
+        async function loadSessions() {
+            try {
+                const response = await fetch('/api/admin/sessions');
+                if (!response.ok) throw new Error('Failed to load sessions');
+
+                allSessions = await response.json();
+                renderSessions();
+            } catch (error) {
+                document.getElementById('sessionsList').innerHTML = `
+                    <div class="no-data">❌ Error loading sessions: ${error.message}</div>
+                `;
+            }
+        }
+
+        function renderSessions() {
+            const filterDate = document.getElementById('filterDate').value;
+            const filterSession = document.getElementById('filterSession').value.toLowerCase();
+
+            const filtered = allSessions.filter(s => {
+                const matchDate = !filterDate || s.date === filterDate;
+                const matchSession = !filterSession || s.session_id.includes(filterSession);
+                return matchDate && matchSession;
+            });
+
+            document.getElementById('sessionCount').textContent = filtered.length;
+
+            const html = filtered.length === 0
+                ? '<div class="no-data">No sessions found</div>'
+                : filtered.map(s => `
+                    <div class="session-item ${selectedSession?.session_id === s.session_id ? 'active' : ''}"
+                         onclick="selectSession('${s.session_id}')">
+                        <div class="session-date">${s.date}</div>
+                        <div class="session-id">${s.session_id}</div>
+                        <div class="session-route">${s.from_city} → ${s.to_city}</div>
+                    </div>
+                `).join('');
+
+            document.getElementById('sessionsList').innerHTML = html;
+        }
+
+        async function selectSession(sessionId) {
+            const session = allSessions.find(s => s.session_id === sessionId);
+            if (!session) return;
+
+            selectedSession = session;
+            document.getElementById('detailsEmpty').style.display = 'none';
+            document.getElementById('detailsContent').style.display = 'flex';
+            document.getElementById('selectedSessionId').textContent = sessionId;
+
+            renderSessions();
+            await loadSessionDetails(sessionId);
+        }
+
+        async function loadSessionDetails(sessionId) {
+            try {
+                const response = await fetch(`/api/admin/sessions/${sessionId}`);
+                if (!response.ok) throw new Error('Failed to load session details');
+
+                const details = await response.json();
+                renderMetadata(details.metadata);
+                renderLogs(details.logs);
+                renderExecution(details.execution);
+                renderScreenshots(details.screenshots);
+                renderErrors(details.errors);
+            } catch (error) {
+                console.error('Error loading session details:', error);
+            }
+        }
+
+        function renderMetadata(metadata) {
+            if (!metadata) return;
+            const html = `
+                <div class="session-metadata">
+                    <div class="metadata-row">
+                        <span class="metadata-label">Search:</span>
+                        <span class="metadata-value">${metadata.search_params.from_city} → ${metadata.search_params.to_city}</span>
+                    </div>
+                    <div class="metadata-row">
+                        <span class="metadata-label">Date:</span>
+                        <span class="metadata-value">${metadata.search_params.travel_date}</span>
+                    </div>
+                    <div class="metadata-row">
+                        <span class="metadata-label">Class:</span>
+                        <span class="metadata-value">${metadata.search_params.travel_class}</span>
+                    </div>
+                    <div class="metadata-row">
+                        <span class="metadata-label">Agents:</span>
+                        <span class="metadata-value">${metadata.search_params.agents.join(', ')}</span>
+                    </div>
+                    <div class="metadata-row">
+                        <span class="metadata-label">Started:</span>
+                        <span class="metadata-value">${new Date(metadata.timestamp_start).toLocaleTimeString()}</span>
+                    </div>
+                    <div class="metadata-row">
+                        <span class="metadata-label">Status:</span>
+                        <span class="metadata-value" style="color: ${metadata.status === 'completed' ? '#22c55e' : '#f59e0b'};">
+                            ${metadata.status}
+                        </span>
+                    </div>
+                </div>
+            `;
+            document.getElementById('metadata').innerHTML = html;
+        }
+
+        function renderLogs(logs) {
+            const logContent = document.getElementById('logsContent');
+            if (!logs || logs.length === 0) {
+                logContent.innerHTML = '<div class="no-data">No logs available</div>';
+                return;
+            }
+
+            logContent.innerHTML = `<div class="logs-container">${logs.map(log => {
+                let className = '';
+                if (log.includes('ERROR') || log.includes('error')) className = 'log-error';
+                else if (log.includes('SUCCESS') || log.includes('success')) className = 'log-success';
+                else if (log.includes('WARNING') || log.includes('warning')) className = 'log-warning';
+                else className = 'log-info';
+
+                return `<div class="${className}">${escapeHtml(log)}</div>`;
+            }).join('')}</div>`;
+        }
+
+        function renderExecution(execution) {
+            const execContent = document.getElementById('executionContent');
+            if (!execution || execution.length === 0) {
+                execContent.innerHTML = '<div class="no-data">No execution data</div>';
+                return;
+            }
+
+            execContent.innerHTML = `
+                <div class="execution-timeline">
+                    ${execution.map(item => `
+                        <div class="timeline-item ${item.status === 'error' ? 'error' : ''}">
+                            <div class="timeline-phase">${item.phase} (${item.agent})</div>
+                            <div class="timeline-agent">${item.timestamp}</div>
+                            <div class="timeline-duration">⏱️ ${item.duration_ms}ms</div>
+                            ${item.status !== 'success' ? `<div class="timeline-agent" style="color: #dc2626;">Status: ${item.status}</div>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderScreenshots(screenshots) {
+            const screenshotsContent = document.getElementById('screenshotsContent');
+            if (!screenshots || screenshots.length === 0) {
+                screenshotsContent.innerHTML = '<div class="no-data">No screenshots available</div>';
+                return;
+            }
+
+            screenshotsContent.innerHTML = `
+                <div class="screenshots-grid">
+                    ${screenshots.map(ss => `
+                        <div class="screenshot-item" onclick="viewScreenshot('${ss.path}')">
+                            <img src="${ss.path}" alt="${ss.agent}" class="screenshot-thumb">
+                            <div class="screenshot-meta">
+                                <div class="screenshot-agent">${ss.agent}</div>
+                                <div class="screenshot-time">${ss.phase}</div>
+                                <div class="screenshot-time">${new Date(ss.timestamp).toLocaleTimeString()}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderErrors(errors) {
+            const errorsContent = document.getElementById('errorsContent');
+            if (!errors || errors.length === 0) {
+                errorsContent.innerHTML = '<div class="no-data">✓ No errors recorded</div>';
+                return;
+            }
+
+            errorsContent.innerHTML = errors.map(err => `
+                <div style="background: #fee2e2; padding: 12px; border-radius: 6px; margin-bottom: 12px; border-left: 3px solid #dc2626;">
+                    <div style="font-weight: 600; color: #991b1b;">Agent: ${err.agent}</div>
+                    <div style="color: #7f1d1d; font-size: 12px; margin-top: 4px;">${err.context}</div>
+                    <div style="color: #7f1d1d; font-size: 12px; margin-top: 4px; font-family: monospace;">${escapeHtml(err.error)}</div>
+                    <div style="color: #9ca3af; font-size: 11px; margin-top: 4px;">${new Date(err.timestamp).toLocaleString()}</div>
+                </div>
+            `).join('');
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+
+        function viewScreenshot(path) {
+            window.open(path, '_blank');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Load sessions on page load
+        loadSessions();
+
+        // Refresh on filter change
+        document.getElementById('filterDate').addEventListener('change', renderSessions);
+        document.getElementById('filterSession').addEventListener('input', renderSessions);
+    </script>
+</body>
+</html>
